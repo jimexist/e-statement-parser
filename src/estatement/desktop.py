@@ -7,6 +7,7 @@ window; nothing is reachable from other machines.
 from __future__ import annotations
 
 import socket
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -34,6 +35,9 @@ class Api:
         path = path if isinstance(path, str) else path[0]
         Path(path).write_text(text)
         return path
+
+    def copy_csv(self, text: str) -> None:
+        subprocess.run(["pbcopy"], input=text, text=True, check=True)
 
 
 def main(db_path: Path = DEFAULT_DB) -> None:
