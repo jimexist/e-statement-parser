@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Importing shows a progress bar: which file is being parsed and, for scanned statements, which OCR page and retry. Parsing now runs in the background and the UI polls for status, so the window stays responsive during long OCR imports.
 - Before running on-device OCR on an image-only PDF, the app asks you to confirm, since OCR can take several minutes per statement.
 - A Copy CSV button next to Export CSV puts the same filtered transactions on the clipboard, ready to paste into a spreadsheet. ([#14](https://github.com/jimexist/e-statement-parser/pull/14))
 

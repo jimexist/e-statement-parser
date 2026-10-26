@@ -199,8 +199,21 @@
       .ocr p {
         margin: 0 0 8px;
       }
-      .ocr progress {
+      progress {
         width: 100%;
+      }
+      #drop.busy {
+        pointer-events: none;
+        opacity: 0.5;
+      }
+      .job {
+        margin-top: 12px;
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      .job .meta {
+        color: var(--muted);
+        font-size: 12px;
       }
       .filters {
         display: flex;
@@ -288,7 +301,7 @@
           <h2>Import</h2>
           <div
             id="drop"
-            :class="{ over }"
+            :class="{ over, busy: job }"
             @click="$refs.file.click()"
             @dragenter.prevent="over = true"
             @dragover.prevent="over = true"
@@ -339,6 +352,17 @@
           </template>
           <template x-if="ocr?.installed && ocrPrompt">
             <div class="result ok">OCR model installed. Image-only PDFs can be imported now.</div>
+          </template>
+          <template x-if="job">
+            <div class="job" role="status">
+              <!-- Without a value attribute the bar is indeterminate (animated) -->
+              <progress
+                max="1"
+                x-effect="jobFraction === null ? $el.removeAttribute('value') : ($el.value = jobFraction)"
+              ></progress>
+              <div x-text="jobLabel"></div>
+              <div class="meta" x-show="job.file" x-text="job.file"></div>
+            </div>
           </template>
           <template x-for="r in results">
             <div class="result" :class="r.cls">

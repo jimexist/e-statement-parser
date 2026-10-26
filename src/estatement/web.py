@@ -98,12 +98,120 @@ class OcrDownload:
         )
 
 
+class ImportStatus(BaseModel):
+    running: bool
+    file_count: int = 0
+    file_index: int = 0  # 1-based index of the file being parsed
+    file: str | None = None
+    backend: str | None = None
+    attempt: int | None = None  # OCR pass, when OCR is retried at another resolution
+    page: int | None = None
+    page_count: int | None = None
+    results: list[ImportResult] = []
+
+
+class ImportJob:
+    """Parses uploaded statements on a background thread (OCR can take minutes)
+    and keeps a status the UI polls. One import runs at a time."""
+
+    def __init__(self, store: Store) -> None:
+        self.store = store
+        self.thread: threading.Thread | None = None
+        self.state = ImportStatus(running=False)
+
+    @property
+    def running(self) -> bool:
+        return bool(self.thread and self.thread.is_alive())
+
+    def start(
+        self,
+        uploads: list[tuple[str | None, bytes]],
+        backend: str,
+        allow_unreconciled: bool,
+        confirm_ocr: bool,
+    ) -> None:
+        self.state = ImportStatus(running=True, file_count=len(uploads))
+        self.thread = threading.Thread(
+            target=self._run, args=(uploads, backend, allow_unreconciled, confirm_ocr), daemon=True
+        )
+        self.thread.start()
+
+    def status(self) -> ImportStatus:
+        return self.state.model_copy(update={"running": self.running})
+
+    def _progress(self, **fields) -> None:
+        if "attempt" in fields:
+            fields.update(page=None, page_count=None)
+        self.state = self.state.model_copy(update=fields)
+
+    def _run(
+        self,
+        uploads: list[tuple[str | None, bytes]],
+        backend: str,
+        allow_unreconciled: bool,
+        confirm_ocr: bool,
+    ) -> None:
+        results = []
+        for i in range(len(uploads)):
+            # Drop each PDF's bytes as soon as we take it so none outlive the import.
+            name, data = uploads[i]
+            uploads[i] = (name, b"")
+            self.state = ImportStatus(
+                running=True, file_count=len(uploads), file_index=i + 1, file=name, results=list(results)
+            )
+            try:
+                item = self._import_one(name, data, backend, allow_unreconciled, confirm_ocr)
+            except Exception as e:  # noqa: BLE001 - reported to the user per file
+                item = ImportResult(file=name, status="error", error=f"{type(e).__name__}: {e}")
+            results.append(item)
+            self.state = self.state.model_copy(update={"results": list(results)})
+
+    def _import_one(
+        self, name: str | None, data: bytes, backend: str, allow_unreconciled: bool, confirm_ocr: bool
+    ) -> ImportResult:
+        digest = sha256(data)
+        if self.store.has(digest):
+            return ImportResult(file=name, status="duplicate")
+        # Parsers read from a path; the temp copy is deleted immediately.
+        with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
+            tmp.write(data)
+            tmp.flush()
+            try:
+                resolved = resolve_backend(Path(tmp.name), backend)
+                if resolved == "vlm" and not confirm_ocr and vlm.is_installed():
+                    return ImportResult(file=name, status="needs_confirm", needs_ocr_confirm=True)
+                stmt = parse_pdf(Path(tmp.name), backend=resolved, progress=self._progress)
+            except vlm.ModelNotInstalled:
+                return ImportResult(
+                    file=name,
+                    status="error",
+                    error="This PDF has no text layer and needs the on-device OCR model.",
+                    needs_ocr_model=True,
+                )
+        item = ImportResult(
+            file=name,
+            status="rejected",
+            bank=stmt.bank,
+            statement_date=stmt.statement_date.isoformat(),
+            backend=stmt.meta.get("backend"),
+            reconciled=stmt.ok,
+            transactions=sum(1 for _ in stmt.transactions()),
+            failed_checks=[c.name for c in stmt.checks if not c.ok],
+            warnings=stmt.warnings,
+        )
+        if stmt.ok or allow_unreconciled:
+            _, item.inserted = self.store.save(stmt, digest, name)
+            item.status = "imported"
+        return item
+
+
 def create_app(db_path: Path = DEFAULT_DB, token: str | None = None) -> FastAPI:
     token = token or secrets.token_urlsafe(24)
     store = Store(db_path)
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.state.token = token
     ocr = OcrDownload()
+    job = app.state.job = ImportJob(store)
 
     @app.middleware("http")
     async def host_guard(request: Request, call_next):
@@ -130,63 +238,23 @@ def create_app(db_path: Path = DEFAULT_DB, token: str | None = None) -> FastAPI:
         js = resources.files("estatement").joinpath(f"static/{file}").read_text()
         return Response(js, media_type="text/javascript", headers={"Cache-Control": "no-cache"})
 
-    @app.post("/api/import", dependencies=[Depends(auth)], response_model=list[ImportResult])
+    @app.post("/api/import", dependencies=[Depends(auth)], response_model=ImportStatus)
     async def import_files(
         files: Annotated[list[UploadFile], File()],
         backend: Annotated[str, Form()] = "auto",
         allow_unreconciled: Annotated[bool, Form()] = False,
         confirm_ocr: Annotated[bool, Form()] = False,
-    ) -> list[ImportResult]:
-        results = []
-        for f in files:
-            data = await f.read()
-            digest = sha256(data)
-            if store.has(digest):
-                results.append(ImportResult(file=f.filename, status="duplicate"))
-                continue
-            # Parsers read from a path; the temp copy is deleted immediately.
-            with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
-                tmp.write(data)
-                tmp.flush()
-                try:
-                    resolved = resolve_backend(Path(tmp.name), backend)
-                    if resolved == "vlm" and not confirm_ocr and vlm.is_installed():
-                        results.append(
-                            ImportResult(file=f.filename, status="needs_confirm", needs_ocr_confirm=True)
-                        )
-                        continue
-                    stmt = parse_pdf(Path(tmp.name), backend=resolved)
-                except vlm.ModelNotInstalled:
-                    results.append(
-                        ImportResult(
-                            file=f.filename,
-                            status="error",
-                            error="This PDF has no text layer and needs the on-device OCR model.",
-                            needs_ocr_model=True,
-                        )
-                    )
-                    continue
-                except Exception as e:  # noqa: BLE001 - reported to the user per file
-                    results.append(
-                        ImportResult(file=f.filename, status="error", error=f"{type(e).__name__}: {e}")
-                    )
-                    continue
-            item = ImportResult(
-                file=f.filename,
-                status="rejected",
-                bank=stmt.bank,
-                statement_date=stmt.statement_date.isoformat(),
-                backend=stmt.meta.get("backend"),
-                reconciled=stmt.ok,
-                transactions=sum(1 for _ in stmt.transactions()),
-                failed_checks=[c.name for c in stmt.checks if not c.ok],
-                warnings=stmt.warnings,
-            )
-            if stmt.ok or allow_unreconciled:
-                _, item.inserted = store.save(stmt, digest, f.filename)
-                item.status = "imported"
-            results.append(item)
-        return results
+    ) -> ImportStatus:
+        uploads = [(f.filename, await f.read()) for f in files]
+        if job.running:  # checked after the awaits so two uploads can't both start
+            raise HTTPException(409, "an import is already running")
+        job.start(uploads, backend, allow_unreconciled, confirm_ocr)
+        return job.status()
+
+    # Plain def (runs in the threadpool) so polling works while a parse is running.
+    @app.get("/api/import", dependencies=[Depends(auth)], response_model=ImportStatus)
+    def import_status() -> ImportStatus:
+        return job.status()
 
     @app.get("/api/ocr-model", dependencies=[Depends(auth)], response_model=OcrModel)
     def ocr_model() -> OcrModel:

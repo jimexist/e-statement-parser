@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import tempfile
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 
@@ -166,8 +167,13 @@ def _load(model_id: str):
 
 
 def extract_lines(
-    pdf: Path, model_id: str = DEFAULT_MODEL, dpi: int = 200, pages: list[int] | None = None
+    pdf: Path,
+    model_id: str = DEFAULT_MODEL,
+    dpi: int = 200,
+    pages: list[int] | None = None,
+    on_page: Callable[[int, int], None] | None = None,
 ) -> list[Line]:
+    """``on_page(i, n)`` is called before OCR of the i-th of n pages."""
     _require_ocr_runtime()
     from mlx_vlm import generate
     from mlx_vlm.prompt_utils import apply_chat_template
@@ -178,10 +184,12 @@ def extract_lines(
     assert isinstance(chat, str)
     doc = pymupdf.open(pdf)
     lines: list[Line] = []
+    todo = [pno for pno in range(1, doc.page_count + 1) if not pages or pno in pages]
     with tempfile.TemporaryDirectory() as tmp:
-        for pno, page in enumerate(doc.pages(), start=1):
-            if pages and pno not in pages:
-                continue
+        for i, pno in enumerate(todo, start=1):
+            if on_page:
+                on_page(i, len(todo))
+            page = doc[pno - 1]
             img = Path(tmp) / f"p{pno}.png"
             page.get_pixmap(dpi=dpi).save(img)
             out = generate(

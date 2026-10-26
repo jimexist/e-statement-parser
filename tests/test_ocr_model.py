@@ -1,4 +1,5 @@
 import hashlib
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -58,12 +59,18 @@ def test_ocr_import_waits_for_confirmation(tmp_path, monkeypatch):
     parsed = []
     monkeypatch.setattr(web, "resolve_backend", lambda pdf, backend: "vlm")
     monkeypatch.setattr(vlm, "is_installed", lambda model_id=vlm.DEFAULT_MODEL: True)
-    monkeypatch.setattr(web, "parse_pdf", lambda pdf, backend: parsed.append(backend) or 1 / 0)
+    monkeypatch.setattr(web, "parse_pdf", lambda pdf, backend, progress: parsed.append(backend) or 1 / 0)
     c = TestClient(create_app(tmp_path / "w.sqlite", token="t"), base_url="http://127.0.0.1")
 
     def post(**data):
         files = {"files": ("scan.pdf", b"%PDF-", "application/pdf")}
-        return c.post("/api/import", headers={"X-Token": "t"}, files=files, data=data).json()[0]
+        c.post("/api/import", headers={"X-Token": "t"}, files=files, data=data)
+        for _ in range(600):
+            status = c.get("/api/import", headers={"X-Token": "t"}).json()
+            if not status["running"]:
+                return status["results"][0]
+            time.sleep(0.05)
+        raise AssertionError("import did not finish")
 
     first = post()
     assert first["status"] == "needs_confirm" and first["needs_ocr_confirm"] and not parsed
