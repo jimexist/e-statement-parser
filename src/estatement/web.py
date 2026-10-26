@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from pydantic import BaseModel
 
 from .backends import vlm
-from .pipeline import parse_pdf
+from .pipeline import parse_pdf, resolve_backend
 from .store import DEFAULT_DB, AccountRow, StatementRow, Store, TransactionRow, sha256
 
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
@@ -29,7 +29,7 @@ SCRIPTS = {"app": "app.js", "alpine.min": "alpine-3.14.9.min.js"}
 
 class ImportResult(BaseModel):
     file: str | None
-    status: Literal["imported", "duplicate", "rejected", "error"]
+    status: Literal["imported", "duplicate", "rejected", "error", "needs_confirm"]
     error: str | None = None
     bank: str | None = None
     statement_date: str | None = None
@@ -40,6 +40,7 @@ class ImportResult(BaseModel):
     failed_checks: list[str] = []
     warnings: list[str] = []
     needs_ocr_model: bool = False
+    needs_ocr_confirm: bool = False  # OCR is slow, so the user agrees to it first
 
 
 class Deleted(BaseModel):
@@ -134,6 +135,7 @@ def create_app(db_path: Path = DEFAULT_DB, token: str | None = None) -> FastAPI:
         files: Annotated[list[UploadFile], File()],
         backend: Annotated[str, Form()] = "auto",
         allow_unreconciled: Annotated[bool, Form()] = False,
+        confirm_ocr: Annotated[bool, Form()] = False,
     ) -> list[ImportResult]:
         results = []
         for f in files:
@@ -147,7 +149,13 @@ def create_app(db_path: Path = DEFAULT_DB, token: str | None = None) -> FastAPI:
                 tmp.write(data)
                 tmp.flush()
                 try:
-                    stmt = parse_pdf(Path(tmp.name), backend=backend)
+                    resolved = resolve_backend(Path(tmp.name), backend)
+                    if resolved == "vlm" and not confirm_ocr and vlm.is_installed():
+                        results.append(
+                            ImportResult(file=f.filename, status="needs_confirm", needs_ocr_confirm=True)
+                        )
+                        continue
+                    stmt = parse_pdf(Path(tmp.name), backend=resolved)
                 except vlm.ModelNotInstalled:
                     results.append(
                         ImportResult(

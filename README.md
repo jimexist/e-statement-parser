@@ -68,9 +68,7 @@ open ../dist/eStatement.app
 ```
 
 This produces a self-contained `eStatement.app` (~550 MB, arm64) with the parser,
-the UI in a native WebKit window, and the MLX OCR runtime. Set `ESTATEMENT_OCR=0`
-to build the lite app (~180 MB) without OCR; it reads text-layer PDFs only
-(everything except HSBC). Releases ship both. OCR weights are not
+the UI in a native WebKit window, and the MLX OCR runtime. OCR weights are not
 bundled; the app offers to download them the first time an image-only PDF
 needs them (or when you pick the OCR engine). From a terminal:
 `dist/eStatement.app/Contents/MacOS/eStatement download-model`. The app is
