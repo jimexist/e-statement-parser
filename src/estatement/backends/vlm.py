@@ -43,7 +43,8 @@ def local_model_path(model_id: str = DEFAULT_MODEL) -> Path:
         return Path(snapshot_download(model_id, local_files_only=True))
     except LocalEntryNotFoundError:
         raise ModelNotInstalled(
-            f"OCR model {model_id} is not installed. Run once: estatement download-model") from None
+            f"OCR model {model_id} is not installed. Run once: estatement download-model"
+        ) from None
 
 
 def download_model(model_id: str = DEFAULT_MODEL) -> Path:
@@ -63,23 +64,26 @@ def _load(model_id: str):
     return load(str(path))
 
 
-def extract_lines(pdf: Path, model_id: str = DEFAULT_MODEL, dpi: int = 200,
-                  pages: list[int] | None = None) -> list[Line]:
+def extract_lines(
+    pdf: Path, model_id: str = DEFAULT_MODEL, dpi: int = 200, pages: list[int] | None = None
+) -> list[Line]:
     from mlx_vlm import generate
     from mlx_vlm.prompt_utils import apply_chat_template
 
     model, processor = _load(model_id)
     prompt = PROMPTS.get(model.config.model_type, GENERIC_PROMPT)
     chat = apply_chat_template(processor, model.config, prompt, num_images=1)
+    assert isinstance(chat, str)
     doc = pymupdf.open(pdf)
     lines: list[Line] = []
     with tempfile.TemporaryDirectory() as tmp:
-        for pno, page in enumerate(doc, start=1):
+        for pno, page in enumerate(doc.pages(), start=1):
             if pages and pno not in pages:
                 continue
             img = Path(tmp) / f"p{pno}.png"
             page.get_pixmap(dpi=dpi).save(img)
-            out = generate(model, processor, chat, [str(img)], max_tokens=4096,
-                           temperature=0.0, verbose=False)
-            lines += to_lines(getattr(out, "text", out), page=pno)
+            out = generate(
+                model, processor, chat, [str(img)], max_tokens=4096, temperature=0.0, verbose=False
+            )
+            lines += to_lines(out if isinstance(out, str) else out.text, page=pno)
     return lines

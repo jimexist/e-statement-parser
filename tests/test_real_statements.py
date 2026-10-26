@@ -25,7 +25,9 @@ def test_matches_ground_truth(gt):
     truth = json.loads(gt.read_text())["transactions"]
     stmt = parse_pdf(pdf)
     assert stmt.ok
-    got = [(a.key, t.txn_date.isoformat(), str(t.amount), t.description, t.reference)
-           for a, t in stmt.transactions()]
+    got = [
+        (a.key, t.txn_date.isoformat(), str(t.amount), t.description, t.reference)
+        for a, t in stmt.transactions()
+    ]
     want = [(t["account"], t["txn_date"], t["amount"], t["description"], t["reference"]) for t in truth]
     assert got == want

@@ -11,13 +11,14 @@ import csv
 import hashlib
 import io
 import json
-import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from .models import Statement
+from pydantic import BaseModel
+
+from .models import AccountKind, Statement
 
 DEFAULT_DB = Path.home() / "Library" / "Application Support" / "estatement" / "estatement.sqlite"
 
@@ -68,13 +69,82 @@ CREATE INDEX IF NOT EXISTS ix_txn_date ON transactions(txn_date);
 CREATE INDEX IF NOT EXISTS ix_txn_account ON transactions(account_key, txn_date);
 """
 
-CSV_COLUMNS = ["txn_date", "post_date", "bank", "account_kind", "account_name", "account",
-               "description", "reference", "amount", "balance", "currency", "category",
-               "statement_date"]
+CSV_COLUMNS = [
+    "txn_date",
+    "post_date",
+    "bank",
+    "account_kind",
+    "account_name",
+    "account",
+    "description",
+    "reference",
+    "amount",
+    "balance",
+    "currency",
+    "category",
+    "statement_date",
+]
+
+
+CENT = Decimal("0.01")
 
 
 def cents(d: Decimal | None) -> int | None:
     return None if d is None else int((d * 100).to_integral_value())
+
+
+def from_cents(c: int) -> Decimal:
+    return (Decimal(c) / 100).quantize(CENT)
+
+
+class TransactionRow(BaseModel):
+    id: str
+    statement_id: int
+    account_key: str
+    txn_date: str
+    post_date: str | None
+    description: str
+    reference: str | None
+    amount: Decimal
+    balance: Decimal | None
+    category: str | None
+    note: str | None
+    bank: str
+    account_kind: AccountKind
+    account_name: str
+    account: str
+    currency: str
+    statement_date: str
+
+
+class CheckRow(BaseModel):
+    name: str
+    expected: str
+    actual: str
+    ok: bool
+
+
+class StatementRow(BaseModel):
+    id: int
+    source_name: str | None
+    bank: str
+    statement_date: str
+    backend: str | None
+    reconciled: bool
+    checks: list[CheckRow]
+    warnings: list[str]
+    imported_at: str
+    n_transactions: int
+
+
+class AccountRow(BaseModel):
+    key: str
+    bank: str
+    kind: AccountKind
+    name: str
+    number_masked: str
+    currency: str
+    holder: str | None
 
 
 def sha256(data: bytes) -> str:
@@ -88,7 +158,7 @@ class Store:
         new = not self.path.exists()
         self.db = sqlite3.connect(self.path, check_same_thread=False)
         if new:
-            os.chmod(self.path, 0o600)
+            self.path.chmod(0o600)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA foreign_keys = ON")
         self.db.executescript(SCHEMA)
@@ -99,8 +169,9 @@ class Store:
     def has(self, digest: str) -> bool:
         return self.db.execute("SELECT 1 FROM statements WHERE sha256 = ?", (digest,)).fetchone() is not None
 
-    def save(self, stmt: Statement, digest: str, source_name: str | None = None,
-             replace: bool = False) -> tuple[int, int]:
+    def save(
+        self, stmt: Statement, digest: str, source_name: str | None = None, replace: bool = False
+    ) -> tuple[int, int]:
         """Store a parsed statement. Returns (statement_id, transactions inserted)."""
         with self.db:
             if replace:
@@ -110,69 +181,115 @@ class Store:
             cur = self.db.execute(
                 "INSERT INTO statements (sha256, source_name, bank, statement_date, backend, reconciled,"
                 " checks, meta, warnings, imported_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (digest, source_name, stmt.bank, stmt.statement_date.isoformat(), stmt.meta.get("backend"),
-                 int(stmt.ok),
-                 json.dumps([{"name": c.name, "expected": str(c.expected), "actual": str(c.actual),
-                              "ok": c.ok} for c in stmt.checks]),
-                 json.dumps(stmt.meta), json.dumps(stmt.warnings),
-                 datetime.now(timezone.utc).isoformat(timespec="seconds")))
+                (
+                    digest,
+                    source_name,
+                    stmt.bank,
+                    stmt.statement_date.isoformat(),
+                    stmt.meta.get("backend"),
+                    int(stmt.ok),
+                    json.dumps(
+                        [
+                            CheckRow(
+                                name=c.name, expected=str(c.expected), actual=str(c.actual), ok=c.ok
+                            ).model_dump()
+                            for c in stmt.checks
+                        ]
+                    ),
+                    json.dumps(stmt.meta),
+                    json.dumps(stmt.warnings),
+                    datetime.now(UTC).isoformat(timespec="seconds"),
+                ),
+            )
             sid = cur.lastrowid
+            assert sid is not None
             inserted = 0
             for a in stmt.accounts:
                 self.db.execute(
                     "INSERT INTO accounts (key, bank, kind, name, number_masked, currency, holder)"
                     " VALUES (?,?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET name=excluded.name,"
                     " holder=COALESCE(excluded.holder, accounts.holder)",
-                    (a.key, a.bank, a.kind, a.name, a.number_masked, a.currency, a.holder))
+                    (a.key, a.bank, a.kind, a.name, a.number_masked, a.currency, a.holder),
+                )
                 self.db.execute(
                     "INSERT INTO account_balances VALUES (?,?,?,?)",
-                    (sid, a.key, cents(a.opening_balance), cents(a.closing_balance)))
+                    (sid, a.key, cents(a.opening_balance), cents(a.closing_balance)),
+                )
                 for t in a.transactions:
                     cur = self.db.execute(
                         "INSERT OR IGNORE INTO transactions (id, statement_id, account_key, txn_date,"
                         " post_date, description, reference, amount_cents, balance_cents)"
                         " VALUES (?,?,?,?,?,?,?,?,?)",
-                        (t.natural_key(a.key), sid, a.key, t.txn_date.isoformat(),
-                         t.post_date.isoformat() if t.post_date else None, t.description,
-                         t.reference, cents(t.amount), cents(t.balance)))
+                        (
+                            t.natural_key(a.key),
+                            sid,
+                            a.key,
+                            t.txn_date.isoformat(),
+                            t.post_date.isoformat() if t.post_date else None,
+                            t.description,
+                            t.reference,
+                            cents(t.amount),
+                            cents(t.balance),
+                        ),
+                    )
                     inserted += cur.rowcount
             return sid, inserted
 
-    def transactions(self, account: str | None = None, start: str | None = None,
-                     end: str | None = None, q: str | None = None) -> list[dict]:
-        sql = ["SELECT t.*, a.bank, a.kind AS account_kind, a.name AS account_name,"
-               " a.number_masked AS account, a.currency, s.statement_date"
-               " FROM transactions t JOIN accounts a ON a.key = t.account_key"
-               " JOIN statements s ON s.id = t.statement_id WHERE 1=1"]
+    def transactions(
+        self,
+        account: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+        q: str | None = None,
+    ) -> list[TransactionRow]:
+        sql = [
+            "SELECT t.*, a.bank, a.kind AS account_kind, a.name AS account_name,"
+            " a.number_masked AS account, a.currency, s.statement_date"
+            " FROM transactions t JOIN accounts a ON a.key = t.account_key"
+            " JOIN statements s ON s.id = t.statement_id WHERE 1=1"
+        ]
         args: list = []
         if account:
-            sql.append("AND t.account_key = ?"); args.append(account)
+            sql.append("AND t.account_key = ?")
+            args.append(account)
         if start:
-            sql.append("AND t.txn_date >= ?"); args.append(start)
+            sql.append("AND t.txn_date >= ?")
+            args.append(start)
         if end:
-            sql.append("AND t.txn_date <= ?"); args.append(end)
+            sql.append("AND t.txn_date <= ?")
+            args.append(end)
         if q:
-            sql.append("AND t.description LIKE ?"); args.append(f"%{q}%")
+            sql.append("AND t.description LIKE ?")
+            args.append(f"%{q}%")
         sql.append("ORDER BY t.txn_date, t.account_key, t.rowid")
-        rows = []
-        for r in self.db.execute(" ".join(sql), args):
-            d = dict(r)
-            d["amount"] = f"{Decimal(d.pop('amount_cents')) / 100:.2f}"
-            b = d.pop("balance_cents")
-            d["balance"] = None if b is None else f"{Decimal(b) / 100:.2f}"
-            rows.append(d)
-        return rows
+        return [
+            TransactionRow(
+                **dict(r),
+                amount=from_cents(r["amount_cents"]),
+                balance=None if r["balance_cents"] is None else from_cents(r["balance_cents"]),
+            )
+            for r in self.db.execute(" ".join(sql), args)
+        ]
 
-    def statements(self) -> list[dict]:
+    def statements(self) -> list[StatementRow]:
         rows = self.db.execute(
             "SELECT s.id, s.source_name, s.bank, s.statement_date, s.backend, s.reconciled, s.checks,"
             " s.warnings, s.imported_at, COUNT(t.id) AS n_transactions FROM statements s"
             " LEFT JOIN transactions t ON t.statement_id = s.id GROUP BY s.id"
-            " ORDER BY s.statement_date DESC, s.bank").fetchall()
-        return [dict(r, checks=json.loads(r["checks"]), warnings=json.loads(r["warnings"])) for r in rows]
+            " ORDER BY s.statement_date DESC, s.bank"
+        ).fetchall()
+        return [
+            StatementRow(
+                **dict(r) | {"checks": json.loads(r["checks"]), "warnings": json.loads(r["warnings"])}
+            )
+            for r in rows
+        ]
 
-    def accounts(self) -> list[dict]:
-        return [dict(r) for r in self.db.execute("SELECT * FROM accounts ORDER BY bank, kind, number_masked")]
+    def accounts(self) -> list[AccountRow]:
+        return [
+            AccountRow(**dict(r))
+            for r in self.db.execute("SELECT * FROM accounts ORDER BY bank, kind, number_masked")
+        ]
 
     def delete_statement(self, statement_id: int) -> None:
         with self.db:
@@ -183,5 +300,5 @@ class Store:
         w = csv.DictWriter(buf, fieldnames=CSV_COLUMNS, extrasaction="ignore")
         w.writeheader()
         for r in self.transactions(**filters):
-            w.writerow(r)
+            w.writerow(r.model_dump())
         return buf.getvalue()

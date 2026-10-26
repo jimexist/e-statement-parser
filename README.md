@@ -176,9 +176,18 @@ Timings are on an M5 Pro with 64 GB.
 9. **Rust/PyO3 not needed.** Text-layer parsing is under 0.5 s per statement;
    the only slow part is OCR inference, which already runs on Metal through MLX.
 
-## Tests
+## Development
+
+Tooling: [uv](https://docs.astral.sh/uv/) for environments and locking,
+[ruff](https://docs.astral.sh/ruff/) for lint and format,
+[ty](https://docs.astral.sh/ty/) for type checking, and
+[pydantic](https://docs.pydantic.dev/) for the domain models (`models.py`)
+and the typed API responses. CI runs all of them on macOS.
 
 ```bash
+uv sync --all-extras
+uv run ruff check . && uv run ruff format --check .
+uv run ty check
 uv run pytest
 ```
 

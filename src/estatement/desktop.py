@@ -27,7 +27,8 @@ class Api:
         import webview
 
         path = webview.windows[0].create_file_dialog(
-            webview.FileDialog.SAVE, save_filename="transactions.csv")
+            webview.FileDialog.SAVE, save_filename="transactions.csv"
+        )
         if not path:
             return None
         path = path if isinstance(path, str) else path[0]
@@ -48,8 +49,9 @@ def main(db_path: Path = DEFAULT_DB) -> None:
     while not server.started:
         threading.Event().wait(0.05)
 
-    webview.create_window("eStatement", f"http://127.0.0.1:{port}/", width=1280, height=820,
-                          min_size=(820, 560), js_api=Api())
+    webview.create_window(
+        "eStatement", f"http://127.0.0.1:{port}/", width=1280, height=820, min_size=(820, 560), js_api=Api()
+    )
     webview.start(private_mode=True)
     server.should_exit = True
 

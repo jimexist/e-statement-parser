@@ -1,6 +1,6 @@
 """Show where one backend diverges from ground truth, with every digit masked.
 
-    uv run python eval/debug.py uob_one_2026-09 "C1 GLM"
+uv run python eval/debug.py uob_one_2026-09 "C1 GLM"
 """
 
 import json
@@ -8,6 +8,7 @@ import re
 import sys
 
 from compare import BACKENDS, STATEMENTS, TRUTH, extract_cached, rows_of
+
 from estatement.banks import parse_lines
 
 
@@ -23,7 +24,12 @@ stmt = parse_lines(lines)
 pred = rows_of(stmt)
 print("checks:", [(c.name, c.ok) for c in stmt.checks])
 print("warnings:", [mask(w) for w in stmt.warnings])
-key = lambda r: (r["account"], r["txn_date"], r["amount"])
+
+
+def key(r):
+    return (r["account"], r["txn_date"], r["amount"])
+
+
 pk = [key(p) for p in pred]
 for t in truth:
     if key(t) in pk:

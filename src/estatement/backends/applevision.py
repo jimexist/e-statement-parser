@@ -27,12 +27,13 @@ def extract_lines(pdf: Path, dpi: int = 300) -> list[Line]:
     doc = pymupdf.open(pdf)
     lines: list[Line] = []
     with tempfile.TemporaryDirectory() as tmp:
-        for pno, page in enumerate(doc, start=1):
+        for pno, page in enumerate(doc.pages(), start=1):
             img = Path(tmp) / f"p{pno}.png"
             page.get_pixmap(dpi=dpi).save(img)
             # Each result: (text, confidence, (x, y, w, h)), normalised, origin bottom-left.
-            results = ocrmac.OCR(str(img), recognition_level="accurate",
-                                 language_preference=["en-US"]).recognize()
+            results = ocrmac.OCR(
+                str(img), recognition_level="accurate", language_preference=["en-US"]
+            ).recognize()
             boxes = [(1 - (y + h), x, x + w, 1 - y, text) for text, _c, (x, y, w, h) in results]
             for column in _split_columns(boxes):
                 lines += _rows_to_lines(column, pno, page.rect)
@@ -65,8 +66,7 @@ def _split_columns(boxes: list[Box], bins: int = 200, min_gap: int = 2) -> list[
         right = [b for b in boxes if b[1] >= g]
         if len(right) < 5 or len(left) < 5:
             continue
-        aligned = sum(
-            any(l[0] <= (r[0] + r[3]) / 2 <= l[3] for l in left) for r in right) / len(right)
+        aligned = sum(any(l[0] <= (r[0] + r[3]) / 2 <= l[3] for l in left) for r in right) / len(right)
         if aligned < 0.75:
             left = [b for b in boxes if b[1] < g]
             return [left, *_split_columns(right, bins, min_gap)]
@@ -88,10 +88,12 @@ def _rows_to_lines(boxes: list[Box], pno: int, rect: pymupdf.Rect) -> list[Line]
     out = []
     for row in rows:
         row.sort(key=lambda b: b[1])
-        out.append(Line(
-            text=" ".join(b[4] for b in row),
-            page=pno,
-            y=row[0][0] * rect.height,
-            words=[(b[1] * rect.width, b[2] * rect.width, b[4]) for b in row],
-        ))
+        out.append(
+            Line(
+                text=" ".join(b[4] for b in row),
+                page=pno,
+                y=row[0][0] * rect.height,
+                words=[(b[1] * rect.width, b[2] * rect.width, b[4]) for b in row],
+            )
+        )
     return out

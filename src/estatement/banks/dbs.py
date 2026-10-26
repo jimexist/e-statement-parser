@@ -6,7 +6,7 @@ import re
 from decimal import Decimal
 
 from ..models import Check, Line, Statement, mask_number
-from .common import AMOUNT, money, parse_dmy, search
+from .common import AMOUNT, money, parse_dmy, require
 from .running_balance import Layout, parse_accounts
 
 BANK = "DBS"
@@ -21,10 +21,12 @@ LAYOUT = Layout(
     brought_forward=re.compile(rf"^Balance Brought Forward\s+(?:[A-Z]{{3}}\s+)?({AMOUNT})$", re.I),
     carried_forward=re.compile(rf"^Balance Carried Forward\s+(?:[A-Z]{{3}}\s+)?({AMOUNT})$", re.I),
     total=re.compile(
-        rf"^Total Balance Carried Forward in [A-Z]{{3}}:?\s+({AMOUNT})\s+({AMOUNT})\s+({AMOUNT})$", re.I),
+        rf"^Total Balance Carried Forward in [A-Z]{{3}}:?\s+({AMOUNT})\s+({AMOUNT})\s+({AMOUNT})$", re.I
+    ),
     noise=re.compile(
         r"^(Date\s+Description|Transaction Details as|PDS_|Page \d+ of \d+|SG\d{8,}\s+\(\d\d/\d{4}\)|w$|•)",
-        re.I),
+        re.I,
+    ),
     end=re.compile(r"^(Messages For You|For Your Information)", re.I),
     currency=re.compile(r"^CURRENCY:\s*(.+)$", re.I),
     kind=lambda name: "fixed_deposit" if "fixed deposit" in name.lower() else "deposit",
@@ -34,12 +36,17 @@ LAYOUT = Layout(
 
 def matches(text: str) -> bool:
     return ("DBS" in text or "POSB" in text) and (
-        "Consolidated Statement" in text or "Balance Brought Forward" in text)
+        "Consolidated Statement" in text or "Balance Brought Forward" in text
+    )
 
 
 def parse(lines: list[Line]) -> Statement:
     text = "\n".join(l.text for l in lines)
-    m = search(r"(?:Transaction Details|Account Summary)\s+as\s+(?:at|of)\s+(\d{1,2}\s+\w{3}\s+\d{4})", text)
+    m = require(
+        r"(?:Transaction Details|Account Summary)\s+as\s+(?:at|of)\s+(\d{1,2}\s+\w{3}\s+\d{4})",
+        text,
+        "statement date",
+    )
     stmt = Statement(bank=BANK, statement_date=parse_dmy(m.group(1)))
 
     # Account Summary on page 1: closing balance of every account.
@@ -55,14 +62,16 @@ def parse(lines: list[Line]) -> Statement:
     parsed = {a.number_masked for a in stmt.accounts}
     for masked in summary:
         # Every account listed in the summary must show up in the details.
-        stmt.checks.append(Check(f"{masked} found in transaction details", Decimal(1),
-                                 Decimal(int(masked in parsed))))
+        stmt.checks.append(
+            Check(f"{masked} found in transaction details", Decimal(1), Decimal(int(masked in parsed)))
+        )
     for a in stmt.accounts:
         if a.number_masked not in summary:
             continue
         if a.kind == "deposit" and a.closing_balance is not None:
-            stmt.checks.append(Check(f"{a.number_masked} summary balance",
-                                     summary[a.number_masked], a.closing_balance))
+            stmt.checks.append(
+                Check(f"{a.number_masked} summary balance", summary[a.number_masked], a.closing_balance)
+            )
         elif a.closing_balance is None:
             a.closing_balance = summary[a.number_masked]
     return stmt

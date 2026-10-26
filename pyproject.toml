@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.162.0",
+    "pydantic>=2.14.1",
     "pymupdf>=2.0",
     "python-multipart>=0.0.32",
     "uvicorn>=0.54.0",
@@ -40,8 +41,31 @@ dev = [
     "httpx>=0.28.1",
     "pyinstaller>=6.22.3",
     "pytest>=9.1.1",
+    "ruff>=0.17.2",
+    "ty>=0.0.92",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["tests"]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+extend-exclude = ["packaging/*.spec"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "BLE", "PTH", "C4"]
+ignore = [
+    "E741",   # `l` is a fine name for a Line in comprehensions
+    "RUF001", # statements contain non-ASCII punctuation on purpose
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["PTH"]
+
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.src]
+include = ["src", "tests", "eval"]

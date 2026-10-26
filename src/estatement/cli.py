@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import csv
 import sys
 from pathlib import Path
 
@@ -51,13 +53,22 @@ def cmd_parse(args) -> int:
         print(f"  [{'ok' if c.ok else 'FAIL'}] {c.name}", file=sys.stderr)
     for w in stmt.warnings:
         print(f"  warning: {w}", file=sys.stderr)
-    import csv
-    out = open(args.csv, "w", newline="") if args.csv else sys.stdout
-    w = csv.writer(out)
-    w.writerow(["txn_date", "post_date", "account", "description", "reference", "amount", "balance"])
-    for a, t in stmt.transactions():
-        w.writerow([t.txn_date, t.post_date or "", a.key, t.description, t.reference or "", t.amount,
-                    "" if t.balance is None else t.balance])
+    with contextlib.ExitStack() as stack:
+        out = stack.enter_context(Path(args.csv).open("w", newline="")) if args.csv else sys.stdout
+        w = csv.writer(out)
+        w.writerow(["txn_date", "post_date", "account", "description", "reference", "amount", "balance"])
+        for a, t in stmt.transactions():
+            w.writerow(
+                [
+                    t.txn_date,
+                    t.post_date or "",
+                    a.key,
+                    t.description,
+                    t.reference or "",
+                    t.amount,
+                    "" if t.balance is None else t.balance,
+                ]
+            )
     return 0 if stmt.ok else 1
 
 
@@ -72,12 +83,14 @@ def cmd_export(args) -> int:
 
 def cmd_serve(args) -> int:
     from .web import serve
+
     serve(Path(args.db), port=args.port, open_browser=not args.no_browser)
     return 0
 
 
 def cmd_app(args) -> int:
     from .desktop import main
+
     main(Path(args.db))
     return 0
 
@@ -100,8 +113,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("pdf", nargs="+")
     p.add_argument("--backend", default="auto", choices=backends)
     p.add_argument("--replace", action="store_true", help="re-import files already stored")
-    p.add_argument("--allow-unreconciled", action="store_true",
-                   help="store statements whose totals don't reconcile")
+    p.add_argument(
+        "--allow-unreconciled", action="store_true", help="store statements whose totals don't reconcile"
+    )
     p.set_defaults(fn=cmd_import)
 
     p = sub.add_parser("parse", help="parse one PDF to CSV without storing")

@@ -15,7 +15,6 @@ import pickle
 import re
 import time
 from collections import defaultdict
-from decimal import Decimal
 from pathlib import Path
 
 from estatement.banks import parse_lines
@@ -75,7 +74,12 @@ def score(pred, truth) -> dict:
         if not cands:
             continue
         # Best description match among same-key candidates.
-        p = max(cands, key=lambda c: difflib.SequenceMatcher(None, norm(c["description"]), norm(t["description"])).ratio())
+        p = max(
+            cands,
+            key=lambda c: difflib.SequenceMatcher(
+                None, norm(c["description"]), norm(t["description"])
+            ).ratio(),
+        )
         cands.remove(p)
         matched += 1
         r = difflib.SequenceMatcher(None, norm(p["description"]), norm(t["description"])).ratio()
@@ -101,15 +105,18 @@ def score(pred, truth) -> dict:
 
 
 def rows_of(stmt) -> list[dict]:
-    return [{
-        "account": a.key,
-        "post_date": t.post_date.isoformat() if t.post_date else None,
-        "txn_date": t.txn_date.isoformat(),
-        "description": t.description,
-        "reference": t.reference,
-        "amount": str(t.amount),
-        "balance": str(t.balance) if t.balance is not None else None,
-    } for a, t in stmt.transactions()]
+    return [
+        {
+            "account": a.key,
+            "post_date": t.post_date.isoformat() if t.post_date else None,
+            "txn_date": t.txn_date.isoformat(),
+            "description": t.description,
+            "reference": t.reference,
+            "amount": str(t.amount),
+            "balance": str(t.balance) if t.balance is not None else None,
+        }
+        for a, t in stmt.transactions()
+    ]
 
 
 def main() -> None:
@@ -119,8 +126,11 @@ def main() -> None:
     args = ap.parse_args()
     labels = [l for l in BACKENDS if not args.backend or any(b.lower() in l.lower() for b in args.backend)]
 
-    out = ["| Backend | Statement | Rows found / truth | Recall | Precision | Desc exact | Desc sim | Ref exact | Row perfect | Totals reconcile | Seconds |",
-           "|---|---|---|---|---|---|---|---|---|---|---|"]
+    out = [
+        "| Backend | Statement | Rows found / truth | Recall | Precision | Desc exact | Desc sim"
+        " | Ref exact | Row perfect | Totals reconcile | Seconds |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
     agg = {}
     for label in labels:
         tot = defaultdict(float)
@@ -137,9 +147,11 @@ def main() -> None:
             s = score(rows_of(stmt) if stmt else [], truth)
             ok = "yes" if stmt and stmt.ok else ("ERR " + err if err else "no")
             ref = "-" if s["ref_exact"] is None else f"{s['ref_exact']:.0%}"
-            out.append(f"| {label} | {gt_path.stem} | {s['n_pred']} / {s['n_truth']} | {s['recall']:.0%} | "
-                       f"{s['precision']:.0%} | {s['desc_exact']:.0%} | {s['desc_sim']:.3f} | {ref} | "
-                       f"{s['row_perfect']:.0%} | {ok} | {secs:.1f} |")
+            out.append(
+                f"| {label} | {gt_path.stem} | {s['n_pred']} / {s['n_truth']} | {s['recall']:.0%} | "
+                f"{s['precision']:.0%} | {s['desc_exact']:.0%} | {s['desc_sim']:.3f} | {ref} | "
+                f"{s['row_perfect']:.0%} | {ok} | {secs:.1f} |"
+            )
             tot["truth"] += s["n_truth"]
             tot["perfect"] += s["row_perfect"] * s["n_truth"]
             tot["recall"] += s["recall"] * s["n_truth"]
@@ -148,10 +160,13 @@ def main() -> None:
             tot["secs"] += secs
         agg[label] = tot
     print("\n".join(out))
-    print("\n| Backend | Statements reconciled | Row recall | Row perfect | Total seconds |\n|---|---|---|---|---|")
+    print("\n| Backend | Statements reconciled | Row recall | Row perfect | Total seconds |")
+    print("|---|---|---|---|---|")
     for label, t in agg.items():
-        print(f"| {label} | {int(t['ok'])}/{int(t['n'])} | {t['recall'] / t['truth']:.1%} | "
-              f"{t['perfect'] / t['truth']:.1%} | {t['secs']:.1f} |")
+        print(
+            f"| {label} | {int(t['ok'])}/{int(t['n'])} | {t['recall'] / t['truth']:.1%} | "
+            f"{t['perfect'] / t['truth']:.1%} | {t['secs']:.1f} |"
+        )
 
 
 if __name__ == "__main__":

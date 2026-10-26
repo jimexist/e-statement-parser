@@ -10,7 +10,7 @@ import re
 from decimal import Decimal
 
 from ..models import Account, Check, Line, Statement, Transaction, mask_number
-from .common import AMOUNT, DAY_MON, day_month, money, parse_dmy, search
+from .common import AMOUNT, DAY_MON, day_month, money, parse_dmy, require, search
 
 BANK = "HSBC"
 
@@ -31,7 +31,9 @@ def _owed(amount: str, cr: str | None) -> Decimal:
 
 def parse(lines: list[Line]) -> Statement:
     text = "\n".join(l.text for l in lines)
-    period_end = search(r"From\s+\d{1,2}\s+\w{3}\s+\d{4}\s+to\s+(\d{1,2}\s+\w{3}\s+\d{4})", text)
+    period_end = require(
+        r"From\s+\d{1,2}\s+\w{3}\s+\d{4}\s+to\s+(\d{1,2}\s+\w{3}\s+\d{4})", text, "statement period"
+    )
     stmt = Statement(bank=BANK, statement_date=parse_dmy(period_end.group(1)))
     for key, pat in {
         "amount_to_pay": rf"Total Due\s+({AMOUNT})",
@@ -53,8 +55,10 @@ def parse(lines: list[Line]) -> Statement:
         if m := CARD_RE.match(t):
             holder, number = m.groups()
             masked = mask_number(number)
-            acct = accounts.setdefault(masked, Account(
-                bank=BANK, kind="credit_card", name="HSBC CARD", number_masked=masked, holder=holder))
+            acct = accounts.setdefault(
+                masked,
+                Account(bank=BANK, kind="credit_card", name="HSBC CARD", number_masked=masked, holder=holder),
+            )
             last = None
         elif acct is None:
             continue
@@ -64,10 +68,13 @@ def parse(lines: list[Line]) -> Statement:
             opening = _owed(*m.groups())
         elif m := TXN_RE.match(t):
             post, trans, desc, amount, cr = m.groups()
-            last = Transaction(post_date=day_month(post, stmt.statement_date),
-                               txn_date=day_month(trans, stmt.statement_date),
-                               description=" ".join(desc.split()),
-                               amount=-_owed(amount, cr), page=line.page)
+            last = Transaction(
+                post_date=day_month(post, stmt.statement_date),
+                txn_date=day_month(trans, stmt.statement_date),
+                description=" ".join(desc.split()),
+                amount=-_owed(amount, cr),
+                page=line.page,
+            )
             acct.transactions.append(last)
         elif last is not None and not search(AMOUNT, t):
             # Wrapped description, e.g. the country code on its own line.

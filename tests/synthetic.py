@@ -37,7 +37,8 @@ def uob_cc_joined(text: str = UOB_CC_LINES) -> str:
     """Same statement with every amount on its row, as a text layer produces it."""
     return text.replace(
         "BUS/MRT 000000001 SINGAPORE\nRef No. : 00000000000000000000001\n1.50",
-        "BUS/MRT 000000001 SINGAPORE 1.50\nRef No. : 00000000000000000000001")
+        "BUS/MRT 000000001 SINGAPORE 1.50\nRef No. : 00000000000000000000001",
+    )
 
 
 def lines(text: str) -> list[Line]:
@@ -45,27 +46,87 @@ def lines(text: str) -> list[Line]:
 
 
 def demo_statements() -> list[Statement]:
-    card = Account(bank="UOB", kind="credit_card", name="UOB ONE CARD", number_masked="****4444",
-                   holder="TEST USER", opening_balance=Decimal("200.00"), closing_balance=Decimal("140.40"))
+    card = Account(
+        bank="UOB",
+        kind="credit_card",
+        name="UOB ONE CARD",
+        number_masked="****4444",
+        holder="TEST USER",
+        opening_balance=Decimal("200.00"),
+        closing_balance=Decimal("140.40"),
+    )
     card.transactions = [
-        Transaction(date(2026, 9, 8), "PAYMT THRU E-BANK", Decimal("200.00"), date(2026, 9, 8)),
-        Transaction(date(2026, 9, 2), "BUS/MRT 000000001 SINGAPORE", Decimal("-1.50"), date(2026, 9, 7), "00000000000000000000001"),
-        Transaction(date(2026, 9, 4), "COFFEE SHOP SINGAPORE", Decimal("-6.40"), date(2026, 9, 8), "00000000000000000000002"),
-        Transaction(date(2026, 9, 12), "SUPERMARKET DEMO", Decimal("-82.35"), date(2026, 9, 14), "00000000000000000000003"),
-        Transaction(date(2026, 9, 20), "BOOKSTORE SINGAPORE", Decimal("-50.15"), date(2026, 9, 22), "00000000000000000000004"),
+        Transaction(
+            txn_date=date(2026, 9, 8),
+            description="PAYMT THRU E-BANK",
+            amount=Decimal("200.00"),
+            post_date=date(2026, 9, 8),
+        ),
+        Transaction(
+            txn_date=date(2026, 9, 2),
+            description="BUS/MRT 000000001 SINGAPORE",
+            amount=Decimal("-1.50"),
+            post_date=date(2026, 9, 7),
+            reference="00000000000000000000001",
+        ),
+        Transaction(
+            txn_date=date(2026, 9, 4),
+            description="COFFEE SHOP SINGAPORE",
+            amount=Decimal("-6.40"),
+            post_date=date(2026, 9, 8),
+            reference="00000000000000000000002",
+        ),
+        Transaction(
+            txn_date=date(2026, 9, 12),
+            description="SUPERMARKET DEMO",
+            amount=Decimal("-82.35"),
+            post_date=date(2026, 9, 14),
+            reference="00000000000000000000003",
+        ),
+        Transaction(
+            txn_date=date(2026, 9, 20),
+            description="BOOKSTORE SINGAPORE",
+            amount=Decimal("-50.15"),
+            post_date=date(2026, 9, 22),
+            reference="00000000000000000000004",
+        ),
     ]
-    savings = Account(bank="DBS", kind="deposit", name="Savings Account", number_masked="****0001",
-                      opening_balance=Decimal("1000.00"), closing_balance=Decimal("3700.00"))
+    savings = Account(
+        bank="DBS",
+        kind="deposit",
+        name="Savings Account",
+        number_masked="****0001",
+        opening_balance=Decimal("1000.00"),
+        closing_balance=Decimal("3700.00"),
+    )
     savings.transactions = [
-        Transaction(date(2026, 9, 1), "Advice FAST Payment / Receipt | SALARY PAYMENT", Decimal("5000.00"), balance=Decimal("6000.00")),
-        Transaction(date(2026, 9, 3), "Advice FAST Payment / Receipt | PAYNOW TRANSFER | RENT", Decimal("-2300.00"), balance=Decimal("3700.00")),
+        Transaction(
+            txn_date=date(2026, 9, 1),
+            description="Advice FAST Payment / Receipt | SALARY PAYMENT",
+            amount=Decimal("5000.00"),
+            balance=Decimal("6000.00"),
+        ),
+        Transaction(
+            txn_date=date(2026, 9, 3),
+            description="Advice FAST Payment / Receipt | PAYNOW TRANSFER | RENT",
+            amount=Decimal("-2300.00"),
+            balance=Decimal("3700.00"),
+        ),
     ]
-    a = Statement(bank="UOB", statement_date=date(2026, 10, 6), accounts=[card],
-                  checks=[Check("****4444 total balance", Decimal("140.40"), Decimal("140.40"))],
-                  meta={"backend": "textlayer"})
-    b = Statement(bank="DBS", statement_date=date(2026, 9, 30), accounts=[savings],
-                  checks=[Check("****0001 closing balance", Decimal("3700.00"), Decimal("3700.00"))],
-                  meta={"backend": "textlayer"})
+    a = Statement(
+        bank="UOB",
+        statement_date=date(2026, 10, 6),
+        accounts=[card],
+        checks=[Check("****4444 total balance", Decimal("140.40"), Decimal("140.40"))],
+        meta={"backend": "textlayer"},
+    )
+    b = Statement(
+        bank="DBS",
+        statement_date=date(2026, 9, 30),
+        accounts=[savings],
+        checks=[Check("****0001 closing balance", Decimal("3700.00"), Decimal("3700.00"))],
+        meta={"backend": "textlayer"},
+    )
     return [a, b]
 
 

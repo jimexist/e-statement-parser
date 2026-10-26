@@ -8,8 +8,12 @@ AMOUNT = r"\d{1,3}(?:,\d{3})*\.\d{2}"
 # "05 SEP" / "05 Sep": only real month names, so OCR noise can't reach day_month().
 DAY_MON = r"\d{2}\s+(?i:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)"
 AMOUNT_RE = re.compile(AMOUNT)
-MONTHS = {m: i for i, m in enumerate(
-    ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"], 1)}
+MONTHS = {
+    m: i
+    for i, m in enumerate(
+        ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"], 1
+    )
+}
 
 
 def money(s: str) -> Decimal:
@@ -35,5 +39,15 @@ def day_month(s: str, statement_date: date) -> date:
     return date(year, month, int(day))
 
 
+class ParseError(ValueError):
+    """The statement is missing something the layout requires."""
+
+
 def search(pattern: str, text: str, flags: int = re.I) -> re.Match | None:
     return re.search(pattern, text, flags)
+
+
+def require(pattern: str, text: str, what: str, flags: int = re.I) -> re.Match:
+    if m := re.search(pattern, text, flags):
+        return m
+    raise ParseError(f"could not find {what}")

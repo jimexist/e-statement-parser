@@ -23,7 +23,7 @@ def has_text_layer(pdf: Path | bytes, min_chars: int = 200) -> bool:
 def extract_lines(pdf: Path | bytes, y_tolerance: float = 2.0) -> list[Line]:
     doc = _open(pdf)
     lines: list[Line] = []
-    for pno, page in enumerate(doc, start=1):
+    for pno, page in enumerate(doc.pages(), start=1):
         rotated = _rotated_boxes(page)
         words = sorted(
             (w for w in page.get_text("words") if not _inside(w, rotated)),

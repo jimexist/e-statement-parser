@@ -3,15 +3,14 @@ from decimal import Decimal
 
 import pymupdf
 import pytest
+from synthetic import UOB_CC_LINES, lines, uob_cc_joined
 
 from estatement.backends.markdown import to_lines
 from estatement.backends.textlayer import extract_lines
 from estatement.banks import UnknownBank, parse_lines, uob_cc
-from estatement.banks.common import day_month
+from estatement.banks.common import ParseError, day_month
 from estatement.models import Line
 from estatement.pipeline import parse_pdf
-
-from synthetic import UOB_CC_LINES, lines, uob_cc_joined
 
 
 def test_year_inference_rolls_back_over_new_year():
@@ -74,8 +73,12 @@ def _deposit_lines(split_amounts: bool) -> list[Line]:
         ("01/09/2026", ["Advice FAST Payment / Receipt", "SALARY PAYMENT"], "5,000.00", "6,000.00"),
         ("03/09/2026", ["Advice FAST Payment / Receipt", "RENT"], "2,300.00", "3,700.00"),
     ]
-    out = ["Consolidated Statement", "Transaction Details as at 30 Sep 2026",
-           "Savings Account Account No. 000-000001-0", "Balance Brought Forward SGD 1,000.00"]
+    out = [
+        "Consolidated Statement",
+        "Transaction Details as at 30 Sep 2026",
+        "Savings Account Account No. 000-000001-0",
+        "Balance Brought Forward SGD 1,000.00",
+    ]
     for day, desc, amt, bal in rows:
         if split_amounts:  # VLM style: description joined, amounts on next line
             out += [f"{day} {' '.join(desc)}", f"{amt} {bal}"]
@@ -118,3 +121,8 @@ def test_textlayer_end_to_end_on_generated_pdf(tmp_path):
     assert stmt.meta["backend"] == "textlayer"
     assert stmt.ok, [(c.name, c.expected, c.actual) for c in stmt.checks]
     assert len(stmt.accounts[0].transactions) == 4
+
+
+def test_missing_statement_date_is_a_clear_error():
+    with pytest.raises(ParseError, match="statement date"):
+        uob_cc.parse(lines("Credit Card(s) Statement\nuobgroup.com"))

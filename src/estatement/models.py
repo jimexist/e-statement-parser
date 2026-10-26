@@ -8,13 +8,17 @@ in (card payment/refund, deposit) is positive.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
+from collections.abc import Iterator
 from datetime import date
 from decimal import Decimal
+from typing import Literal
+
+from pydantic import BaseModel, Field, computed_field
+
+AccountKind = Literal["credit_card", "deposit", "fixed_deposit", "investment"]
 
 
-@dataclass
-class Line:
+class Line(BaseModel):
     """One visual line of text, as produced by an extraction backend."""
 
     text: str
@@ -23,9 +27,11 @@ class Line:
     # (x0, x1, word) for each word, when the backend knows geometry.
     words: list[tuple[float, float, str]] | None = None
 
+    def __init__(self, text: str, page: int, **kw) -> None:
+        super().__init__(text=text, page=page, **kw)
 
-@dataclass
-class Transaction:
+
+class Transaction(BaseModel):
     txn_date: date
     description: str
     amount: Decimal
@@ -47,53 +53,59 @@ class Transaction:
         return hashlib.sha256("|".join(parts).encode()).hexdigest()[:24]
 
 
-@dataclass
-class Account:
+class Account(BaseModel):
     bank: str
-    kind: str  # credit_card | deposit | fixed_deposit | investment
+    kind: AccountKind
     name: str
     number_masked: str
     currency: str = "SGD"
     holder: str | None = None
     opening_balance: Decimal | None = None
     closing_balance: Decimal | None = None
-    transactions: list[Transaction] = field(default_factory=list)
+    transactions: list[Transaction] = Field(default_factory=list)
 
+    @computed_field
     @property
     def key(self) -> str:
         return f"{self.bank}:{self.kind}:{self.number_masked}"
 
 
-@dataclass
-class Check:
+class Check(BaseModel):
     name: str
     expected: Decimal
     actual: Decimal
     # False for bookkeeping counters (e.g. "0 errors") that can pass vacuously.
     against_printed_total: bool = True
 
+    def __init__(self, name: str, expected: Decimal, actual: Decimal, **kw) -> None:
+        super().__init__(name=name, expected=expected, actual=actual, **kw)
+
+    @computed_field
     @property
     def ok(self) -> bool:
         return self.expected == self.actual
 
 
-@dataclass
-class Statement:
+class Statement(BaseModel):
     bank: str
     statement_date: date
-    accounts: list[Account] = field(default_factory=list)
-    checks: list[Check] = field(default_factory=list)
+    accounts: list[Account] = Field(default_factory=list)
+    checks: list[Check] = Field(default_factory=list)
     # Statement-level facts (amount due, due date, ...) as strings.
-    meta: dict[str, str] = field(default_factory=dict)
-    warnings: list[str] = field(default_factory=list)
+    meta: dict[str, str] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
 
+    @computed_field
     @property
     def ok(self) -> bool:
         # Reconciled only if at least one printed total was actually compared.
-        return (bool(self.accounts) and any(c.against_printed_total for c in self.checks)
-                and all(c.ok for c in self.checks))
+        return (
+            bool(self.accounts)
+            and any(c.against_printed_total for c in self.checks)
+            and all(c.ok for c in self.checks)
+        )
 
-    def transactions(self):
+    def transactions(self) -> Iterator[tuple[Account, Transaction]]:
         for acct in self.accounts:
             for t in acct.transactions:
                 yield acct, t

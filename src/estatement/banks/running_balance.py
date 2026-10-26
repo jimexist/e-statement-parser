@@ -9,12 +9,12 @@ taken from the change in running balance, which doubles as a per-row check.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Callable
 
-from ..models import Account, Check, Line, Statement, Transaction, mask_number
+from ..models import Account, AccountKind, Check, Line, Statement, Transaction, mask_number
 from .common import AMOUNT, AMOUNT_RE, money
 
 TRAILING_AMOUNTS_RE = re.compile(rf"^(.*?)\s*((?:{AMOUNT}\s*){{1,2}})$")
@@ -23,16 +23,16 @@ TRAILING_AMOUNTS_RE = re.compile(rf"^(.*?)\s*((?:{AMOUNT}\s*){{1,2}})$")
 @dataclass
 class Layout:
     bank: str
-    account_header: re.Pattern   # groups: name (may be None: taken from previous line), number
-    txn_start: re.Pattern        # groups: date text, rest of line
+    account_header: re.Pattern  # groups: name (may be None: taken from previous line), number
+    txn_start: re.Pattern  # groups: date text, rest of line
     parse_date: Callable[[str], date]
     brought_forward: re.Pattern  # group: amount
-    total: re.Pattern | None = None            # groups: withdrawn, deposited, closing
+    total: re.Pattern | None = None  # groups: withdrawn, deposited, closing
     carried_forward: re.Pattern | None = None  # group: amount
     noise: re.Pattern | None = None
     end: re.Pattern | None = None
-    currency: re.Pattern | None = None         # group: currency name
-    kind: Callable[[str], str] = lambda name: "deposit"
+    currency: re.Pattern | None = None  # group: currency name
+    kind: Callable[[str], AccountKind] = lambda name: "deposit"
     # x (points) left of which an amount is a withdrawal; only consulted when
     # the running balance cannot decide.
     deposit_column_x: float | None = None
@@ -48,7 +48,7 @@ def parse_accounts(lines: list[Line], layout: Layout, stmt: Statement) -> list[A
 
     def flush():
         nonlocal block, running, errors
-        if block is None:
+        if block is None or acct is None:
             return
         day, items = block
         block = None
@@ -81,9 +81,15 @@ def parse_accounts(lines: list[Line], layout: Layout, stmt: Statement) -> list[A
             signed = amount if _deposit_column(amount_line, layout) else -amount
         running = balance
         sums[acct.number_masked][0 if signed < 0 else 1] += amount
-        acct.transactions.append(Transaction(
-            txn_date=layout.parse_date(day), description=" | ".join(desc), amount=signed,
-            balance=balance, page=items[0][1].page))
+        acct.transactions.append(
+            Transaction(
+                txn_date=layout.parse_date(day),
+                description=" | ".join(desc),
+                amount=signed,
+                balance=balance,
+                page=items[0][1].page,
+            )
+        )
 
     prev = ""
     for line in lines:
@@ -97,8 +103,9 @@ def parse_accounts(lines: list[Line], layout: Layout, stmt: Statement) -> list[A
             name, number = (m.group(1) or last_line).strip(), m.group(2)
             masked = mask_number(number)
             if masked not in accounts:
-                accounts[masked] = Account(bank=layout.bank, kind=layout.kind(name),
-                                           name=name, number_masked=masked)
+                accounts[masked] = Account(
+                    bank=layout.bank, kind=layout.kind(name), name=name, number_masked=masked
+                )
                 sums[masked] = [Decimal(0), Decimal(0)]
             acct = accounts[masked]
             continue
@@ -128,8 +135,11 @@ def parse_accounts(lines: list[Line], layout: Layout, stmt: Statement) -> list[A
             stmt.checks += [
                 Check(f"{acct.number_masked} total withdrawals", withdrawn, w),
                 Check(f"{acct.number_masked} total deposits", deposited, d),
-                Check(f"{acct.number_masked} closing balance", closing,
-                      running if running is not None else Decimal(0)),
+                Check(
+                    f"{acct.number_masked} closing balance",
+                    closing,
+                    running if running is not None else Decimal(0),
+                ),
             ]
             continue
         if m := layout.txn_start.match(t):
@@ -140,8 +150,9 @@ def parse_accounts(lines: list[Line], layout: Layout, stmt: Statement) -> list[A
             block[1].append((t, line))
     flush()
 
-    stmt.checks.append(Check("running balance errors", Decimal(0), Decimal(errors),
-                             against_printed_total=False))
+    stmt.checks.append(
+        Check("running balance errors", Decimal(0), Decimal(errors), against_printed_total=False)
+    )
     for a in accounts.values():
         if a.kind != "deposit":
             continue
