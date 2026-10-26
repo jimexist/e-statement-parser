@@ -9,6 +9,24 @@ permissions:
   contents: read
 
 jobs:
+  # Public repo: statements, databases and exports must never be committed.
+  personal-data:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Reject statement data files
+        run: |
+          bad=$(git ls-files | grep -iE '\.(pdf|sqlite|sqlite3|db|csv|xlsx?|ofx|qif)$' | grep -vE '^tests/fixtures/[^/]+\.csv$' || true)
+          if [ -n "$bad" ]; then echo "Personal data files must not be committed:"; echo "$bad"; exit 1; fi
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   check:
     # The app targets Apple Silicon Macs; tests only need the core (no OCR model).
     runs-on: macos-latest
@@ -22,6 +40,12 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run ty check
       - run: uv run pytest -q
+      - name: Build package and check the web UI files are in the wheel
+        run: |
+          uv build
+          for f in index.html app.js alpine-3.14.9.min.js; do
+            unzip -l dist/*.whl | grep -q "estatement/static/$f" || { echo "missing static/$f in wheel"; exit 1; }
+          done
 
   web:
     runs-on: ubuntu-latest
