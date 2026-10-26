@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- A Copy CSV button next to Export CSV puts the same filtered transactions on the clipboard, ready to paste into a spreadsheet. ([#14](https://github.com/jimexist/e-statement-parser/pull/14))
+
 ## [0.1.1] - 2026-10-26
 
 ### Added
