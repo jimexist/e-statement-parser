@@ -69,9 +69,9 @@ jobs:
           **Install:** unzip, move `eStatement.app` to Applications. The app is not notarized, so on first launch
           right-click it and choose **Open** (or run `xattr -dr com.apple.quarantine /Applications/eStatement.app`).
 
-          **OCR for image-only PDFs (e.g. HSBC):** run once
-          `/Applications/eStatement.app/Contents/MacOS/eStatement download-model`
-          (about 2 GB from Hugging Face). Parsing itself never uses the network.
+          **OCR for image-only PDFs (e.g. HSBC):** the app offers a one-time download of the OCR model
+          (about 2 GB from Hugging Face, pinned by SHA-256) the first time a statement needs it.
+          Parsing itself never uses the network.
 
           Verify the download with the attached `.sha256` file.
           EOF

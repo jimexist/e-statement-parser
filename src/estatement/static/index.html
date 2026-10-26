@@ -188,6 +188,20 @@
       .badge.bad {
         color: var(--bad);
       }
+      .ocr {
+        padding: 10px;
+        border-radius: 8px;
+        margin-top: 12px;
+        font-size: 13px;
+        background: var(--warn-bg);
+        overflow-wrap: anywhere;
+      }
+      .ocr p {
+        margin: 0 0 8px;
+      }
+      .ocr progress {
+        width: 100%;
+      }
       .filters {
         display: flex;
         flex-wrap: wrap;
@@ -302,6 +316,30 @@
             </label>
             <label class="small"><input type="checkbox" x-model="allow" /> keep if totals don't match</label>
           </div>
+          <template x-if="showOcr">
+            <div class="ocr">
+              <p>
+                Image-only statements (e.g. HSBC) need the on-device OCR model: a one-time
+                <span x-text="(ocr.total_bytes / 1e9).toFixed(1)"></span> GB download from Hugging Face,
+                checked against pinned SHA-256 hashes. Your statements never leave this Mac.
+              </p>
+              <template x-if="!ocr.downloading">
+                <button class="primary" @click="downloadOcr()">Download OCR model</button>
+              </template>
+              <template x-if="ocr.downloading">
+                <div>
+                  <progress :value="ocr.done_bytes" :max="ocr.total_bytes"></progress>
+                  <span x-text="`Downloading… ${ocrProgress}`"></span>
+                </div>
+              </template>
+              <template x-if="ocr.error"
+                ><p class="bad" x-text="`Download failed: ${ocr.error}`"></p
+              ></template>
+            </div>
+          </template>
+          <template x-if="ocr?.installed && ocrPrompt">
+            <div class="result ok">OCR model installed. Image-only PDFs can be imported now.</div>
+          </template>
           <template x-for="r in results">
             <div class="result" :class="r.cls">
               <template x-if="r.file"><b x-text="r.file"></b></template><span x-text="r.detail"></span>

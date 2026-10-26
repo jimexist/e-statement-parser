@@ -39,6 +39,9 @@ uv sync --extra vlm                      # + on-device OCR for image-only PDFs (
 uv run estatement download-model         # one-time ~2 GB download of GLM-OCR weights
 ```
 
+The OCR model is pinned to one Hugging Face commit, and every file is checked
+against a pinned SHA-256 after download and again before it is loaded.
+
 ```bash
 uv run estatement import ~/Downloads/*.pdf      # parse, verify, store (dedupes by file hash)
 uv run estatement export --out sept.csv --start 2026-09-01 --end 2026-09-30
@@ -66,7 +69,8 @@ open ../dist/eStatement.app
 
 This produces a self-contained `eStatement.app` (~900 MB, arm64) with the parser,
 the UI in a native WebKit window, and the MLX OCR runtime. OCR weights are not
-bundled; run `estatement download-model` once, or
+bundled; the app offers to download them the first time an image-only PDF
+needs them (or when you pick the OCR engine). From a terminal:
 `dist/eStatement.app/Contents/MacOS/eStatement download-model`. The app is
 ad-hoc signed. For other Macs, sign it with a Developer ID and notarize it, or
 right-click > Open the first time.
@@ -198,5 +202,6 @@ your own statements run automatically when `data/ground_truth/` and
 ## Privacy notes
 
 - `data/`, `*.pdf`, `*.sqlite` and `*.csv` are gitignored. Never commit statements.
-- Parsing makes no network calls. The only network access is the explicit
-  `download-model` command, which fetches public weights from Hugging Face.
+- Parsing makes no network calls. The only network access is fetching the
+  pinned public OCR weights from Hugging Face, either with the `download-model`
+  command or when you click "Download OCR model" in the app.
