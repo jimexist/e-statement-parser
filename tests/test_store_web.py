@@ -1,7 +1,10 @@
+import base64
 import csv
+import hashlib
 import io
 import os
 import stat
+from importlib import resources
 
 from fastapi.testclient import TestClient
 from synthetic import demo_statements
@@ -84,3 +87,15 @@ def test_api_serves_exact_decimal_amounts(tmp_path):
     assert [r["amount"] for r in rows] == ["-82.35"]
     stmts = c.get("/api/statements", headers={"X-Token": "t"}).json()
     assert {s["bank"]: s["reconciled"] for s in stmts} == {"UOB": True, "DBS": True}
+
+
+# sha384 of dist/cdn.min.js from the alpinejs@3.14.9 npm tarball (npm integrity
+# sha512-gqSOhTEy...), matching jsDelivr's published hash for that file.
+ALPINE_SRI = "sha384-9Ax3MmS9AClxJyd5/zafcXXjxmwFhZCdsT6HJoJjarvCaAkJlk5QDzjLJm+Wdx5F"
+
+
+def test_vendored_alpine_is_unmodified():
+    static = resources.files("estatement").joinpath("static")
+    digest = hashlib.sha384(static.joinpath("alpine-3.14.9.min.js").read_bytes()).digest()
+    assert "sha384-" + base64.b64encode(digest).decode() == ALPINE_SRI
+    assert f'integrity="{ALPINE_SRI}"' in static.joinpath("index.html").read_text()
