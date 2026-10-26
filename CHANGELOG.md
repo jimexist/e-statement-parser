@@ -7,7 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Before running on-device OCR on an image-only PDF, the app asks you to confirm, since OCR can take several minutes per statement.
 - A Copy CSV button next to Export CSV puts the same filtered transactions on the clipboard, ready to paste into a spreadsheet. ([#14](https://github.com/jimexist/e-statement-parser/pull/14))
+
+### Removed
+
+- The lite macOS app (`eStatement-lite`). Releases ship one app, with on-device OCR.
 
 ## [0.1.1] - 2026-10-26
 

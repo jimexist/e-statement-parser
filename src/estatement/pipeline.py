@@ -25,14 +25,20 @@ def extract_lines(pdf: Path, backend: str = "textlayer", **kw):
     return mod.extract_lines(pdf, **kw)
 
 
-def parse_pdf(pdf: Path, backend: str = "auto", **kw) -> Statement:
-    """Parse a statement. ``auto`` uses the text layer when the PDF has one and
-    falls back to the on-device VLM for scanned / image-only PDFs."""
-    pdf = Path(pdf)
-    if backend == "auto":
-        from .backends.textlayer import has_text_layer
+def resolve_backend(pdf: Path, backend: str = "auto") -> str:
+    """``auto`` uses the text layer when the PDF has one and falls back to the
+    on-device VLM for scanned / image-only PDFs."""
+    if backend != "auto":
+        return backend
+    from .backends.textlayer import has_text_layer
 
-        backend = "textlayer" if has_text_layer(pdf) else "vlm"
+    return "textlayer" if has_text_layer(Path(pdf)) else "vlm"
+
+
+def parse_pdf(pdf: Path, backend: str = "auto", **kw) -> Statement:
+    """Parse a statement with ``backend`` (see ``resolve_backend``)."""
+    pdf = Path(pdf)
+    backend = resolve_backend(pdf, backend)
     if backend == "vlm" and "dpi" not in kw:
         return _parse_vlm_until_reconciled(pdf, **kw)
     stmt = parse_lines(extract_lines(pdf, backend, **kw))
