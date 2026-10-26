@@ -4,6 +4,7 @@ import hashlib
 import io
 import os
 import stat
+import time
 from importlib import resources
 
 from fastapi.testclient import TestClient
@@ -74,7 +75,64 @@ def test_web_rejects_non_statement_upload(tmp_path):
         data={"backend": "textlayer"},
     )
     assert r.status_code == 200
-    assert r.json()[0]["status"] == "error"
+    status = _wait_for_import(c)
+    assert status["file_count"] == 1 and len(status["results"]) == 1
+    assert status["results"][0]["status"] == "error"
+
+
+def test_web_import_reports_progress_and_imports(tmp_path, monkeypatch):
+    seen = []
+
+    def fake_parse(pdf, backend, progress):
+        progress(backend="vlm")
+        for attempt in (1, 2):
+            progress(attempt=attempt)
+            for page in (1, 2):
+                progress(page=page, page_count=2)
+                seen.append(app.state.job.status())
+        return demo_statements()[0]
+
+    app = create_app(tmp_path / "w.sqlite", token="t")
+    c = TestClient(app, base_url="http://127.0.0.1")
+    monkeypatch.setattr("estatement.web.parse_pdf", fake_parse)
+    files = [("files", (n, n.encode(), "application/pdf")) for n in ("a.pdf", "b.pdf")]
+    r = c.post("/api/import", headers={"X-Token": "t"}, files=files, data={"backend": "auto"})
+    assert r.status_code == 200
+    status = _wait_for_import(c)
+    assert [(s.file_index, s.attempt, s.page, s.page_count) for s in seen[:4]] == [
+        (1, 1, 1, 2),
+        (1, 1, 2, 2),
+        (1, 2, 1, 2),
+        (1, 2, 2, 2),
+    ]
+    assert all(s.running and s.backend == "vlm" and s.file == "a.pdf" for s in seen[:4])
+    assert seen[4].file_index == 2 and seen[4].file == "b.pdf"
+    assert [x["status"] for x in status["results"]] == ["imported", "imported"]
+
+
+def test_web_import_reports_unexpected_errors_per_file(tmp_path, monkeypatch):
+    def boom(data):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("estatement.web.sha256", boom)
+    c = TestClient(create_app(tmp_path / "w.sqlite", token="t"), base_url="http://127.0.0.1")
+    files = [("files", (n, b"x", "application/pdf")) for n in ("a.pdf", "b.pdf")]
+    c.post("/api/import", headers={"X-Token": "t"}, files=files)
+    status = _wait_for_import(c)
+    assert [(x["file"], x["status"], x["error"]) for x in status["results"]] == [
+        ("a.pdf", "error", "OSError: disk full"),
+        ("b.pdf", "error", "OSError: disk full"),
+    ]
+
+
+def _wait_for_import(c, timeout=30.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        status = c.get("/api/import", headers={"X-Token": "t"}).json()
+        if not status["running"]:
+            return status
+        time.sleep(0.05)
+    raise AssertionError("import did not finish")
 
 
 def test_api_serves_exact_decimal_amounts(tmp_path):

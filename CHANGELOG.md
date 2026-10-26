@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Importing shows a progress bar: which file is being parsed and, for scanned statements, which OCR page and retry. Parsing now runs in the background and the UI polls for status, so the window stays responsive during long OCR imports.
+
 ## [0.1.1] - 2026-10-26
 
 ### Added

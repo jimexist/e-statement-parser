@@ -20,10 +20,12 @@ document.addEventListener("alpine:init", () =>
     loaded: false,
     ocr: null,
     ocrPrompt: false,
+    job: null,
 
     init() {
       this.refresh();
       this.checkOcr();
+      this.resumeImport();
       this.$watch("backend", (b) => {
         if (b === "vlm") this.ocrPrompt = true;
       });
@@ -65,6 +67,26 @@ document.addEventListener("alpine:init", () =>
       if (this.ocr.downloading) setTimeout(() => this.checkOcr(), 1000);
     },
 
+    // Fraction done for the import bar, or null while unknown (indeterminate bar).
+    get jobFraction() {
+      const j = this.job;
+      if (!j?.file_count || (j.file_count === 1 && !j.page_count)) return null;
+      const within = j.page_count ? (j.page - 1) / j.page_count : 0;
+      return (j.file_index - 1 + within) / j.file_count;
+    },
+    get jobLabel() {
+      const j = this.job;
+      const parts = [];
+      if (j.file_count > 1) parts.push(`File ${j.file_index} of ${j.file_count}`);
+      if (j.backend === "vlm") {
+        parts.push(j.page_count ? `OCR page ${j.page} of ${j.page_count}` : "Starting OCR");
+        if (j.attempt > 1) parts.push(`retry ${j.attempt - 1} at a new resolution`);
+      } else {
+        parts.push("Reading");
+      }
+      return parts.join(" · ") + "…";
+    },
+
     async loadTransactions() {
       this.rows = await (await api("/api/transactions?" + this.params())).json();
       this.loaded = true;
@@ -83,9 +105,29 @@ document.addEventListener("alpine:init", () =>
       for (const f of files) fd.append("files", f);
       fd.append("backend", this.backend);
       fd.append("allow_unreconciled", this.allow);
-      this.results = [{ cls: "", file: null, detail: `Parsing ${files.length} file(s)…` }];
+      this.results = [];
       try {
-        const res = await (await api("/api/import", { method: "POST", body: fd })).json();
+        this.job = await (await api("/api/import", { method: "POST", body: fd })).json();
+      } catch (e) {
+        this.results = [{ cls: "bad", file: null, detail: `Import failed: ${e.message}` }];
+        return;
+      }
+      await this.pollImport();
+    },
+    // After a reload, keep showing an import that is still running.
+    async resumeImport() {
+      const job = await (await api("/api/import")).json();
+      if (!job.running) return;
+      this.job = job;
+      await this.pollImport();
+    },
+    async pollImport() {
+      try {
+        while (this.job.running) {
+          await new Promise((r) => setTimeout(r, 500));
+          this.job = await (await api("/api/import")).json();
+        }
+        const res = this.job.results;
         if (res.some((r) => r.needs_ocr_model)) {
           this.ocrPrompt = true;
           await this.checkOcr();
@@ -107,6 +149,7 @@ document.addEventListener("alpine:init", () =>
       } catch (e) {
         this.results = [{ cls: "bad", file: null, detail: `Import failed: ${e.message}` }];
       }
+      this.job = null;
       this.refresh();
     },
 
