@@ -20,6 +20,7 @@ document.addEventListener("alpine:init", () =>
     loaded: false,
     ocr: null,
     ocrPrompt: false,
+    copied: false,
 
     init() {
       this.refresh();
@@ -129,6 +130,25 @@ document.addEventListener("alpine:init", () =>
       });
       a.click();
       URL.revokeObjectURL(a.href);
+    },
+
+    async copyCsv() {
+      const csv = api("/api/export.csv?" + this.params()).then((r) => r.text());
+      try {
+        if (window.pywebview?.api) {
+          await window.pywebview.api.copy_csv(await csv);
+        } else if (window.ClipboardItem) {
+          // Hand over a promise so Safari still counts this as part of the click.
+          const blob = csv.then((t) => new Blob([t], { type: "text/plain" }));
+          await navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
+        } else {
+          await navigator.clipboard.writeText(await csv);
+        }
+        this.copied = "Copied";
+      } catch {
+        this.copied = "Copy failed";
+      }
+      setTimeout(() => (this.copied = false), 1500);
     },
   })),
 );
