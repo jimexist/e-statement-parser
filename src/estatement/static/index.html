@@ -38,6 +38,7 @@
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   label.small { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
   .result, .stmt { padding: 8px 10px; border-radius: 8px; margin-top: 8px; font-size: 13px; }
+  .result b { display: block; }
   .ok { background: var(--ok-bg); } .bad { background: var(--bad-bg); } .dup { background: var(--warn-bg); }
   .stmt { display: flex; justify-content: space-between; gap: 8px; border: 1px solid var(--line); }
   .stmt .meta { color: var(--muted); font-size: 12px; }
@@ -59,8 +60,88 @@
   td .acct { color: var(--muted); font-size: 12px; }
   .empty { color: var(--muted); padding: 24px; text-align: center; }
 </style>
+<script>
+const TOKEN = "__TOKEN__";
+const api = (path, opts = {}) =>
+  fetch(path, { ...opts, headers: { ...(opts.headers || {}), "X-Token": TOKEN } })
+    .then(r => { if (!r.ok) throw new Error(r.status); return r; });
+const fmt = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+document.addEventListener("alpine:init", () => Alpine.data("app", () => ({
+  accounts: [], statements: [], rows: [], results: [],
+  f: { account: "", start: "", end: "", q: "" },
+  backend: "auto", allow: false, over: false, loaded: false,
+
+  init() { this.refresh(); },
+  fmt,
+
+  params() {
+    const p = new URLSearchParams();
+    if (this.f.account) p.set("account", this.f.account);
+    if (this.f.start) p.set("start", this.f.start + "-01");
+    if (this.f.end) p.set("end", this.f.end + "-31");
+    if (this.f.q) p.set("q", this.f.q);
+    return p;
+  },
+  get totals() {
+    let tin = 0, tout = 0;
+    for (const r of this.rows) { const a = Number(r.amount); if (a > 0) tin += a; else tout += a; }
+    return { tin, tout, net: tin + tout };
+  },
+
+  async loadTransactions() {
+    this.rows = await (await api("/api/transactions?" + this.params())).json();
+    this.loaded = true;
+  },
+  async refresh() {
+    const [a, s] = await Promise.all([api("/api/accounts"), api("/api/statements")]);
+    this.accounts = await a.json();
+    this.statements = await s.json();
+    await this.loadTransactions();
+  },
+
+  async upload(files) {
+    files = [...files].filter(f => f.name.toLowerCase().endsWith(".pdf"));
+    if (!files.length) return;
+    const fd = new FormData();
+    for (const f of files) fd.append("files", f);
+    fd.append("backend", this.backend);
+    fd.append("allow_unreconciled", this.allow);
+    this.results = [{ cls: "", file: null, detail: `Parsing ${files.length} file(s)…` }];
+    try {
+      const res = await (await api("/api/import", { method: "POST", body: fd })).json();
+      this.results = res.map(r => ({
+        file: r.file,
+        cls: r.status === "imported" ? "ok" : r.status === "duplicate" ? "dup" : "bad",
+        detail: r.status === "imported" ? `${r.bank} ${r.statement_date}: ${r.inserted} rows${r.reconciled ? "" : " (totals differ)"}`
+          : r.status === "duplicate" ? "already imported"
+          : r.status === "rejected" ? `${r.bank} ${r.statement_date}: totals don't match (${r.failed_checks.join(", ")}), not saved`
+          : r.error,
+      }));
+    } catch (e) {
+      this.results = [{ cls: "bad", file: null, detail: `Import failed: ${e.message}` }];
+    }
+    this.refresh();
+  },
+
+  async remove(id) {
+    if (!confirm("Remove this statement and its transactions from the database?")) return;
+    await api(`/api/statements/${id}`, { method: "DELETE" });
+    this.refresh();
+  },
+
+  async exportCsv() {
+    const res = await api("/api/export.csv?" + this.params());
+    if (window.pywebview?.api) { await window.pywebview.api.save_csv(await res.text()); return; }
+    const blob = await res.blob();
+    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: "transactions.csv" });
+    a.click(); URL.revokeObjectURL(a.href);
+  },
+})));
+</script>
+<script defer src="/alpine.min.js"></script>
 </head>
-<body>
+<body x-data="app">
 <header>
   <h1>eStatement</h1>
   <span class="sub">Runs on this Mac only. Nothing is uploaded.</span>
@@ -69,145 +150,78 @@
   <section>
     <div class="panel">
       <h2>Import</h2>
-      <div id="drop"><strong>Drop statement PDFs here</strong>or click to choose files</div>
-      <input id="file" type="file" accept="application/pdf" multiple hidden>
+      <div id="drop" :class="{ over }" @click="$refs.file.click()"
+           @dragenter.prevent="over = true" @dragover.prevent="over = true"
+           @dragleave.prevent="over = false" @drop.prevent="over = false; upload($event.dataTransfer.files)">
+        <strong>Drop statement PDFs here</strong>or click to choose files
+      </div>
+      <input x-ref="file" type="file" accept="application/pdf" multiple hidden
+             @change="upload($event.target.files); $event.target.value = ''">
       <div class="row">
         <label class="small">Engine
-          <select id="backend">
+          <select x-model="backend">
             <option value="auto">Auto (text layer, OCR if needed)</option>
             <option value="textlayer">Text layer only</option>
             <option value="vlm">On-device OCR (GLM-OCR)</option>
           </select>
         </label>
-        <label class="small"><input id="allow" type="checkbox"> keep if totals don't match</label>
+        <label class="small"><input type="checkbox" x-model="allow"> keep if totals don't match</label>
       </div>
-      <div id="results"></div>
+      <template x-for="r in results">
+        <div class="result" :class="r.cls"><template x-if="r.file"><b x-text="r.file"></b></template><span x-text="r.detail"></span></div>
+      </template>
     </div>
     <div class="panel" style="margin-top:16px">
       <h2>Statements</h2>
-      <div id="statements"><div class="empty">None yet</div></div>
+      <template x-for="s in statements" :key="s.id">
+        <div class="stmt"><div>
+          <div><b x-text="s.bank"></b> <span x-text="s.statement_date"></span>
+            <span class="badge" :class="s.reconciled ? 'ok' : 'bad'" x-text="s.reconciled ? '✓ totals match' : '✗ totals differ'"></span></div>
+          <div class="meta" x-text="`${s.n_transactions} rows · ${s.backend} · ${s.source_name}`"></div>
+        </div><button title="Remove this statement and its rows" @click="remove(s.id)">Remove</button></div>
+      </template>
+      <div class="empty" x-show="!statements.length">None yet</div>
     </div>
   </section>
   <section class="panel">
     <h2>Transactions</h2>
     <div class="filters">
-      <select id="account"><option value="">All accounts</option></select>
-      <input id="start" type="month" title="From month">
-      <input id="end" type="month" title="To month">
-      <input id="q" type="search" placeholder="Search description">
-      <button id="export">Export CSV</button>
+      <select x-model="f.account" @change="loadTransactions()">
+        <option value="">All accounts</option>
+        <template x-for="a in accounts" :key="a.key">
+          <option :value="a.key" x-text="`${a.bank} ${a.name} ${a.number_masked}`"></option>
+        </template>
+      </select>
+      <input type="month" title="From month" x-model="f.start" @change="loadTransactions()">
+      <input type="month" title="To month" x-model="f.end" @change="loadTransactions()">
+      <input type="search" placeholder="Search description" x-model="f.q" @input.debounce.200ms="loadTransactions()">
+      <button @click="exportCsv()">Export CSV</button>
     </div>
     <div class="totals">
-      <span>In <b id="t-in">0.00</b></span><span>Out <b id="t-out">0.00</b></span>
-      <span>Net <b id="t-net">0.00</b></span><span><b id="t-n">0</b> rows</span>
+      <span>In <b x-text="fmt(totals.tin)">0.00</b></span><span>Out <b x-text="fmt(totals.tout)">0.00</b></span>
+      <span>Net <b x-text="fmt(totals.net)">0.00</b></span><span><b x-text="rows.length">0</b> rows</span>
     </div>
     <div class="tablewrap">
       <table>
         <thead><tr><th>Date</th><th>Description</th><th>Account</th><th style="text-align:right">Amount</th><th style="text-align:right">Balance</th></tr></thead>
-        <tbody id="rows"><tr><td colspan="5" class="empty">Import a statement to begin</td></tr></tbody>
+        <tbody>
+          <template x-for="r in rows">
+            <tr>
+              <td class="date" x-text="r.txn_date"></td>
+              <td>
+                <template x-for="line in String(r.description ?? '').split(' | ')"><div x-text="line"></div></template>
+                <div class="acct" x-show="r.reference" x-text="'Ref ' + r.reference"></div>
+              </td>
+              <td><div x-text="`${r.bank} ${r.account}`"></div><div class="acct" x-text="r.account_name"></div></td>
+              <td class="num" :class="{ in: Number(r.amount) > 0 }" x-text="fmt(r.amount)"></td>
+              <td class="num" x-text="r.balance == null ? '' : fmt(r.balance)"></td>
+            </tr>
+          </template>
+          <tr x-show="!rows.length"><td colspan="5" class="empty" x-text="loaded && statements.length ? 'No transactions match' : 'Import a statement to begin'">Import a statement to begin</td></tr>
+        </tbody>
       </table>
     </div>
   </section>
 </main>
-<script>
-const TOKEN = "__TOKEN__";
-const $ = (id) => document.getElementById(id);
-const api = (path, opts = {}) =>
-  fetch(path, { ...opts, headers: { ...(opts.headers || {}), "X-Token": TOKEN } })
-    .then(r => { if (!r.ok) throw new Error(r.status); return r; });
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const fmt = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-function filters() {
-  const p = new URLSearchParams();
-  if ($("account").value) p.set("account", $("account").value);
-  if ($("start").value) p.set("start", $("start").value + "-01");
-  if ($("end").value) p.set("end", $("end").value + "-31");
-  if ($("q").value) p.set("q", $("q").value);
-  return p;
-}
-
-async function loadTransactions() {
-  const rows = await (await api("/api/transactions?" + filters())).json();
-  let tin = 0, tout = 0;
-  $("rows").innerHTML = rows.length ? rows.map(r => {
-    const a = Number(r.amount);
-    if (a > 0) tin += a; else tout += a;
-    return `<tr><td class="date">${esc(r.txn_date)}</td>
-      <td>${esc(r.description).replaceAll(" | ", "<br>")}${r.reference ? `<div class="acct">Ref ${esc(r.reference)}</div>` : ""}</td>
-      <td><div>${esc(r.bank)} ${esc(r.account)}</div><div class="acct">${esc(r.account_name)}</div></td>
-      <td class="num ${a > 0 ? "in" : ""}">${fmt(a)}</td>
-      <td class="num">${r.balance == null ? "" : fmt(r.balance)}</td></tr>`;
-  }).join("") : `<tr><td colspan="5" class="empty">No transactions match</td></tr>`;
-  $("t-in").textContent = fmt(tin); $("t-out").textContent = fmt(tout);
-  $("t-net").textContent = fmt(tin + tout); $("t-n").textContent = rows.length;
-}
-
-async function loadAccounts() {
-  const accts = await (await api("/api/accounts")).json();
-  const cur = $("account").value;
-  $("account").innerHTML = `<option value="">All accounts</option>` + accts.map(a =>
-    `<option value="${esc(a.key)}">${esc(a.bank)} ${esc(a.name)} ${esc(a.number_masked)}</option>`).join("");
-  $("account").value = cur;
-}
-
-async function loadStatements() {
-  const list = await (await api("/api/statements")).json();
-  $("statements").innerHTML = list.length ? list.map(s => `
-    <div class="stmt"><div>
-      <div><b>${esc(s.bank)}</b> ${esc(s.statement_date)}
-        <span class="badge ${s.reconciled ? "ok" : "bad"}">${s.reconciled ? "✓ totals match" : "✗ totals differ"}</span></div>
-      <div class="meta">${s.n_transactions} rows · ${esc(s.backend)} · ${esc(s.source_name)}</div>
-    </div><button data-id="${s.id}" title="Remove this statement and its rows">Remove</button></div>`).join("")
-    : `<div class="empty">None yet</div>`;
-}
-
-async function refresh() { await Promise.all([loadAccounts(), loadStatements()]); await loadTransactions(); }
-
-async function upload(files) {
-  if (!files.length) return;
-  const fd = new FormData();
-  for (const f of files) fd.append("files", f);
-  fd.append("backend", $("backend").value);
-  fd.append("allow_unreconciled", $("allow").checked);
-  $("results").innerHTML = `<div class="result">Parsing ${files.length} file(s)…</div>`;
-  try {
-    const res = await (await api("/api/import", { method: "POST", body: fd })).json();
-    $("results").innerHTML = res.map(r => {
-      const cls = r.status === "imported" ? "ok" : r.status === "duplicate" ? "dup" : "bad";
-      const detail = r.status === "imported" ? `${r.bank} ${r.statement_date}: ${r.inserted} rows${r.reconciled ? "" : " (totals differ)"}`
-        : r.status === "duplicate" ? "already imported"
-        : r.status === "rejected" ? `${r.bank} ${r.statement_date}: totals don't match (${esc(r.failed_checks.join(", "))}), not saved`
-        : esc(r.error);
-      return `<div class="result ${cls}"><b>${esc(r.file)}</b><br>${detail}</div>`;
-    }).join("");
-  } catch (e) {
-    $("results").innerHTML = `<div class="result bad">Import failed: ${esc(e.message)}</div>`;
-  }
-  refresh();
-}
-
-$("drop").onclick = () => $("file").click();
-$("file").onchange = (e) => upload([...e.target.files]);
-["dragenter", "dragover"].forEach(ev => $("drop").addEventListener(ev, e => { e.preventDefault(); $("drop").classList.add("over"); }));
-["dragleave", "drop"].forEach(ev => $("drop").addEventListener(ev, e => { e.preventDefault(); $("drop").classList.remove("over"); }));
-$("drop").addEventListener("drop", e => upload([...e.dataTransfer.files].filter(f => f.name.toLowerCase().endsWith(".pdf"))));
-["account", "start", "end"].forEach(id => $(id).onchange = loadTransactions);
-let t; $("q").oninput = () => { clearTimeout(t); t = setTimeout(loadTransactions, 200); };
-$("statements").onclick = async (e) => {
-  const id = e.target.dataset?.id;
-  if (id && confirm("Remove this statement and its transactions from the database?")) {
-    await api(`/api/statements/${id}`, { method: "DELETE" }); refresh();
-  }
-};
-$("export").onclick = async () => {
-  const res = await api("/api/export.csv?" + filters());
-  if (window.pywebview?.api) { await window.pywebview.api.save_csv(await res.text()); return; }
-  const blob = await res.blob();
-  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: "transactions.csv" });
-  a.click(); URL.revokeObjectURL(a.href);
-};
-refresh();
-</script>
 </body>
 </html>

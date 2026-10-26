@@ -50,6 +50,14 @@ def test_web_requires_token_and_local_host(tmp_path):
     assert "t0k" in c.get("/").text
 
 
+def test_web_serves_vendored_alpine(tmp_path):
+    c = TestClient(create_app(tmp_path / "w.sqlite", token="t"), base_url="http://127.0.0.1")
+    assert 'src="/alpine.min.js"' in c.get("/").text
+    r = c.get("/alpine.min.js")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/javascript")
+    assert "Alpine" in r.text
+
+
 def test_web_rejects_non_statement_upload(tmp_path):
     app = create_app(tmp_path / "w.sqlite", token="t")
     c = TestClient(app, base_url="http://127.0.0.1")
