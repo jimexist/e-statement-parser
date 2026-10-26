@@ -1,0 +1,14 @@
+{
+  "name": "estatement-web",
+  "private": true,
+  "packageManager": "pnpm@10.18.0",
+  "scripts": {
+    "lint": "oxlint src/estatement/static",
+    "fmt": "oxfmt src/estatement/static",
+    "fmt:check": "oxfmt --check src/estatement/static"
+  },
+  "devDependencies": {
+    "oxfmt": "0.74.0",
+    "oxlint": "1.89.0"
+  }
+}

@@ -21,7 +21,7 @@ from .pipeline import parse_pdf
 from .store import DEFAULT_DB, AccountRow, StatementRow, Store, TransactionRow, sha256
 
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
-ALPINE = "alpine-3.14.9.min.js"
+SCRIPTS = {"app": "app.js", "alpine.min": "alpine-3.14.9.min.js"}
 
 
 class ImportResult(BaseModel):
@@ -64,11 +64,14 @@ def create_app(db_path: Path = DEFAULT_DB, token: str | None = None) -> FastAPI:
         page = resources.files("estatement").joinpath("static/index.html").read_text()
         return page.replace("__TOKEN__", token)
 
-    # Alpine.js is vendored (pinned, integrity-checked against npm) so the UI works offline.
-    @app.get("/alpine.min.js")
-    def alpine():
-        js = resources.files("estatement").joinpath(f"static/{ALPINE}").read_text()
-        return Response(js, media_type="text/javascript", headers={"Cache-Control": "max-age=86400"})
+    # Only the listed scripts are served. Alpine is vendored (pinned, integrity-checked
+    # against npm) so the UI works offline.
+    @app.get("/{name}.js")
+    def script(name: str):
+        if (file := SCRIPTS.get(name)) is None:
+            raise HTTPException(404)
+        js = resources.files("estatement").joinpath(f"static/{file}").read_text()
+        return Response(js, media_type="text/javascript", headers={"Cache-Control": "no-cache"})
 
     @app.post("/api/import", dependencies=[Depends(auth)], response_model=list[ImportResult])
     async def import_files(
