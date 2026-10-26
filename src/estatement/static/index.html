@@ -1,213 +1,397 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>eStatement</title>
-<style>
-  :root {
-    --bg: #f6f6f4; --panel: #ffffff; --ink: #1d1d1f; --muted: #6e6e73; --line: #e3e3e0;
-    --accent: #0a64d8; --in: #1a7f37; --out: #1d1d1f; --bad: #c62828; --warn-bg: #fff4e5;
-    --ok-bg: #e8f5ec; --bad-bg: #fdecec;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #161617; --panel: #1f1f21; --ink: #f2f2f2; --muted: #9a9aa0; --line: #333336;
-      --accent: #4c9aff; --in: #4cc36a; --out: #f2f2f2; --bad: #ff6b6b; --warn-bg: #3a2e1a;
-      --ok-bg: #1d3324; --bad-bg: #3a1f1f;
-    }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink);
-         font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; }
-  header { display: flex; align-items: baseline; gap: 12px; padding: 18px 24px 6px; }
-  header h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
-  header .sub { color: var(--muted); font-size: 12px; }
-  main { padding: 8px 24px 40px; display: grid; gap: 16px; grid-template-columns: 340px 1fr; align-items: start; }
-  @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 8px 16px 32px; } }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
-  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; }
-  #drop { border: 1.5px dashed var(--line); border-radius: 10px; padding: 22px 12px; text-align: center;
-          color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s; }
-  #drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
-  #drop strong { color: var(--ink); display: block; margin-bottom: 4px; }
-  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
-  select, input, button { font: inherit; color: var(--ink); background: var(--panel);
-          border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
-  button { cursor: pointer; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  label.small { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
-  .result, .stmt { padding: 8px 10px; border-radius: 8px; margin-top: 8px; font-size: 13px; }
-  .ok { background: var(--ok-bg); } .bad { background: var(--bad-bg); } .dup { background: var(--warn-bg); }
-  .stmt { display: flex; justify-content: space-between; gap: 8px; border: 1px solid var(--line); }
-  .stmt .meta { color: var(--muted); font-size: 12px; }
-  .stmt button { padding: 2px 8px; font-size: 12px; }
-  .badge { font-size: 11px; padding: 1px 6px; border-radius: 999px; margin-left: 4px; }
-  .badge.ok { color: var(--in); } .badge.bad { color: var(--bad); }
-  .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
-  .filters input[type=search] { flex: 1; min-width: 160px; }
-  .totals { display: flex; gap: 18px; margin: 4px 0 12px; font-size: 13px; color: var(--muted); }
-  .totals b { color: var(--ink); font-variant-numeric: tabular-nums; }
-  .tablewrap { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 6px 8px;
-       border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); }
-  td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  td.in { color: var(--in); }
-  td.date { white-space: nowrap; font-variant-numeric: tabular-nums; }
-  td .acct { color: var(--muted); font-size: 12px; }
-  .empty { color: var(--muted); padding: 24px; text-align: center; }
-</style>
-</head>
-<body>
-<header>
-  <h1>eStatement</h1>
-  <span class="sub">Runs on this Mac only. Nothing is uploaded.</span>
-</header>
-<main>
-  <section>
-    <div class="panel">
-      <h2>Import</h2>
-      <div id="drop"><strong>Drop statement PDFs here</strong>or click to choose files</div>
-      <input id="file" type="file" accept="application/pdf" multiple hidden>
-      <div class="row">
-        <label class="small">Engine
-          <select id="backend">
-            <option value="auto">Auto (text layer, OCR if needed)</option>
-            <option value="textlayer">Text layer only</option>
-            <option value="vlm">On-device OCR (GLM-OCR)</option>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="estatement-token" content="__TOKEN__" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>eStatement</title>
+    <style>
+      :root {
+        --bg: #f6f6f4;
+        --panel: #ffffff;
+        --ink: #1d1d1f;
+        --muted: #6e6e73;
+        --line: #e3e3e0;
+        --accent: #0a64d8;
+        --in: #1a7f37;
+        --out: #1d1d1f;
+        --bad: #c62828;
+        --warn-bg: #fff4e5;
+        --ok-bg: #e8f5ec;
+        --bad-bg: #fdecec;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #161617;
+          --panel: #1f1f21;
+          --ink: #f2f2f2;
+          --muted: #9a9aa0;
+          --line: #333336;
+          --accent: #4c9aff;
+          --in: #4cc36a;
+          --out: #f2f2f2;
+          --bad: #ff6b6b;
+          --warn-bg: #3a2e1a;
+          --ok-bg: #1d3324;
+          --bad-bg: #3a1f1f;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          14px/1.45 -apple-system,
+          BlinkMacSystemFont,
+          "SF Pro Text",
+          "Helvetica Neue",
+          sans-serif;
+      }
+      header {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        padding: 18px 24px 6px;
+      }
+      header h1 {
+        font-size: 20px;
+        margin: 0;
+        letter-spacing: -0.01em;
+      }
+      header .sub {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      main {
+        padding: 8px 24px 40px;
+        display: grid;
+        gap: 16px;
+        grid-template-columns: 340px 1fr;
+        align-items: start;
+      }
+      @media (max-width: 900px) {
+        main {
+          grid-template-columns: 1fr;
+          padding: 8px 16px 32px;
+        }
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 16px;
+      }
+      h2 {
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        margin: 0 0 10px;
+      }
+      #drop {
+        border: 1.5px dashed var(--line);
+        border-radius: 10px;
+        padding: 22px 12px;
+        text-align: center;
+        color: var(--muted);
+        cursor: pointer;
+        transition:
+          border-color 0.15s,
+          background 0.15s;
+      }
+      #drop.over {
+        border-color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 8%, transparent);
+      }
+      #drop strong {
+        color: var(--ink);
+        display: block;
+        margin-bottom: 4px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+      select,
+      input,
+      button {
+        font: inherit;
+        color: var(--ink);
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 6px 10px;
+      }
+      button {
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      label.small {
+        font-size: 12px;
+        color: var(--muted);
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .result,
+      .stmt {
+        padding: 8px 10px;
+        border-radius: 8px;
+        margin-top: 8px;
+        font-size: 13px;
+      }
+      .result b {
+        display: block;
+      }
+      .ok {
+        background: var(--ok-bg);
+      }
+      .bad {
+        background: var(--bad-bg);
+      }
+      .dup {
+        background: var(--warn-bg);
+      }
+      .stmt {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        border: 1px solid var(--line);
+      }
+      .stmt .meta {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .stmt button {
+        padding: 2px 8px;
+        font-size: 12px;
+      }
+      .badge {
+        font-size: 11px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        margin-left: 4px;
+      }
+      .badge.ok {
+        color: var(--in);
+      }
+      .badge.bad {
+        color: var(--bad);
+      }
+      .filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      .filters input[type="search"] {
+        flex: 1;
+        min-width: 160px;
+      }
+      .totals {
+        display: flex;
+        gap: 18px;
+        margin: 4px 0 12px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .totals b {
+        color: var(--ink);
+        font-variant-numeric: tabular-nums;
+      }
+      .tablewrap {
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      th {
+        text-align: left;
+        font-weight: 600;
+        color: var(--muted);
+        font-size: 12px;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+        position: sticky;
+        top: 0;
+        background: var(--panel);
+      }
+      td {
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      td.num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      td.in {
+        color: var(--in);
+      }
+      td.date {
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+      }
+      td .acct {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .empty {
+        color: var(--muted);
+        padding: 24px;
+        text-align: center;
+      }
+    </style>
+    <script defer src="/app.js"></script>
+    <script defer src="/alpine.min.js"></script>
+  </head>
+  <body x-data="app">
+    <header>
+      <h1>eStatement</h1>
+      <span class="sub">Runs on this Mac only. Nothing is uploaded.</span>
+    </header>
+    <main>
+      <section>
+        <div class="panel">
+          <h2>Import</h2>
+          <div
+            id="drop"
+            :class="{ over }"
+            @click="$refs.file.click()"
+            @dragenter.prevent="over = true"
+            @dragover.prevent="over = true"
+            @dragleave.prevent="over = false"
+            @drop.prevent="over = false; upload($event.dataTransfer.files)"
+          >
+            <strong>Drop statement PDFs here</strong>or click to choose files
+          </div>
+          <input
+            x-ref="file"
+            type="file"
+            accept="application/pdf"
+            multiple
+            hidden
+            @change="upload($event.target.files); $event.target.value = ''"
+          />
+          <div class="row">
+            <label class="small"
+              >Engine
+              <select x-model="backend">
+                <option value="auto">Auto (text layer, OCR if needed)</option>
+                <option value="textlayer">Text layer only</option>
+                <option value="vlm">On-device OCR (GLM-OCR)</option>
+              </select>
+            </label>
+            <label class="small"><input type="checkbox" x-model="allow" /> keep if totals don't match</label>
+          </div>
+          <template x-for="r in results">
+            <div class="result" :class="r.cls">
+              <template x-if="r.file"><b x-text="r.file"></b></template><span x-text="r.detail"></span>
+            </div>
+          </template>
+        </div>
+        <div class="panel" style="margin-top: 16px">
+          <h2>Statements</h2>
+          <template x-for="s in statements" :key="s.id">
+            <div class="stmt">
+              <div>
+                <div>
+                  <b x-text="s.bank"></b> <span x-text="s.statement_date"></span>
+                  <span
+                    class="badge"
+                    :class="s.reconciled ? 'ok' : 'bad'"
+                    x-text="s.reconciled ? '✓ totals match' : '✗ totals differ'"
+                  ></span>
+                </div>
+                <div class="meta" x-text="`${s.n_transactions} rows · ${s.backend} · ${s.source_name}`"></div>
+              </div>
+              <button title="Remove this statement and its rows" @click="remove(s.id)">Remove</button>
+            </div>
+          </template>
+          <div class="empty" x-show="!statements.length">None yet</div>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Transactions</h2>
+        <div class="filters">
+          <select x-model="f.account" @change="loadTransactions()">
+            <option value="">All accounts</option>
+            <template x-for="a in accounts" :key="a.key">
+              <option :value="a.key" x-text="`${a.bank} ${a.name} ${a.number_masked}`"></option>
+            </template>
           </select>
-        </label>
-        <label class="small"><input id="allow" type="checkbox"> keep if totals don't match</label>
-      </div>
-      <div id="results"></div>
-    </div>
-    <div class="panel" style="margin-top:16px">
-      <h2>Statements</h2>
-      <div id="statements"><div class="empty">None yet</div></div>
-    </div>
-  </section>
-  <section class="panel">
-    <h2>Transactions</h2>
-    <div class="filters">
-      <select id="account"><option value="">All accounts</option></select>
-      <input id="start" type="month" title="From month">
-      <input id="end" type="month" title="To month">
-      <input id="q" type="search" placeholder="Search description">
-      <button id="export">Export CSV</button>
-    </div>
-    <div class="totals">
-      <span>In <b id="t-in">0.00</b></span><span>Out <b id="t-out">0.00</b></span>
-      <span>Net <b id="t-net">0.00</b></span><span><b id="t-n">0</b> rows</span>
-    </div>
-    <div class="tablewrap">
-      <table>
-        <thead><tr><th>Date</th><th>Description</th><th>Account</th><th style="text-align:right">Amount</th><th style="text-align:right">Balance</th></tr></thead>
-        <tbody id="rows"><tr><td colspan="5" class="empty">Import a statement to begin</td></tr></tbody>
-      </table>
-    </div>
-  </section>
-</main>
-<script>
-const TOKEN = "__TOKEN__";
-const $ = (id) => document.getElementById(id);
-const api = (path, opts = {}) =>
-  fetch(path, { ...opts, headers: { ...(opts.headers || {}), "X-Token": TOKEN } })
-    .then(r => { if (!r.ok) throw new Error(r.status); return r; });
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const fmt = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-function filters() {
-  const p = new URLSearchParams();
-  if ($("account").value) p.set("account", $("account").value);
-  if ($("start").value) p.set("start", $("start").value + "-01");
-  if ($("end").value) p.set("end", $("end").value + "-31");
-  if ($("q").value) p.set("q", $("q").value);
-  return p;
-}
-
-async function loadTransactions() {
-  const rows = await (await api("/api/transactions?" + filters())).json();
-  let tin = 0, tout = 0;
-  $("rows").innerHTML = rows.length ? rows.map(r => {
-    const a = Number(r.amount);
-    if (a > 0) tin += a; else tout += a;
-    return `<tr><td class="date">${esc(r.txn_date)}</td>
-      <td>${esc(r.description).replaceAll(" | ", "<br>")}${r.reference ? `<div class="acct">Ref ${esc(r.reference)}</div>` : ""}</td>
-      <td><div>${esc(r.bank)} ${esc(r.account)}</div><div class="acct">${esc(r.account_name)}</div></td>
-      <td class="num ${a > 0 ? "in" : ""}">${fmt(a)}</td>
-      <td class="num">${r.balance == null ? "" : fmt(r.balance)}</td></tr>`;
-  }).join("") : `<tr><td colspan="5" class="empty">No transactions match</td></tr>`;
-  $("t-in").textContent = fmt(tin); $("t-out").textContent = fmt(tout);
-  $("t-net").textContent = fmt(tin + tout); $("t-n").textContent = rows.length;
-}
-
-async function loadAccounts() {
-  const accts = await (await api("/api/accounts")).json();
-  const cur = $("account").value;
-  $("account").innerHTML = `<option value="">All accounts</option>` + accts.map(a =>
-    `<option value="${esc(a.key)}">${esc(a.bank)} ${esc(a.name)} ${esc(a.number_masked)}</option>`).join("");
-  $("account").value = cur;
-}
-
-async function loadStatements() {
-  const list = await (await api("/api/statements")).json();
-  $("statements").innerHTML = list.length ? list.map(s => `
-    <div class="stmt"><div>
-      <div><b>${esc(s.bank)}</b> ${esc(s.statement_date)}
-        <span class="badge ${s.reconciled ? "ok" : "bad"}">${s.reconciled ? "✓ totals match" : "✗ totals differ"}</span></div>
-      <div class="meta">${s.n_transactions} rows · ${esc(s.backend)} · ${esc(s.source_name)}</div>
-    </div><button data-id="${s.id}" title="Remove this statement and its rows">Remove</button></div>`).join("")
-    : `<div class="empty">None yet</div>`;
-}
-
-async function refresh() { await Promise.all([loadAccounts(), loadStatements()]); await loadTransactions(); }
-
-async function upload(files) {
-  if (!files.length) return;
-  const fd = new FormData();
-  for (const f of files) fd.append("files", f);
-  fd.append("backend", $("backend").value);
-  fd.append("allow_unreconciled", $("allow").checked);
-  $("results").innerHTML = `<div class="result">Parsing ${files.length} file(s)…</div>`;
-  try {
-    const res = await (await api("/api/import", { method: "POST", body: fd })).json();
-    $("results").innerHTML = res.map(r => {
-      const cls = r.status === "imported" ? "ok" : r.status === "duplicate" ? "dup" : "bad";
-      const detail = r.status === "imported" ? `${r.bank} ${r.statement_date}: ${r.inserted} rows${r.reconciled ? "" : " (totals differ)"}`
-        : r.status === "duplicate" ? "already imported"
-        : r.status === "rejected" ? `${r.bank} ${r.statement_date}: totals don't match (${esc(r.failed_checks.join(", "))}), not saved`
-        : esc(r.error);
-      return `<div class="result ${cls}"><b>${esc(r.file)}</b><br>${detail}</div>`;
-    }).join("");
-  } catch (e) {
-    $("results").innerHTML = `<div class="result bad">Import failed: ${esc(e.message)}</div>`;
-  }
-  refresh();
-}
-
-$("drop").onclick = () => $("file").click();
-$("file").onchange = (e) => upload([...e.target.files]);
-["dragenter", "dragover"].forEach(ev => $("drop").addEventListener(ev, e => { e.preventDefault(); $("drop").classList.add("over"); }));
-["dragleave", "drop"].forEach(ev => $("drop").addEventListener(ev, e => { e.preventDefault(); $("drop").classList.remove("over"); }));
-$("drop").addEventListener("drop", e => upload([...e.dataTransfer.files].filter(f => f.name.toLowerCase().endsWith(".pdf"))));
-["account", "start", "end"].forEach(id => $(id).onchange = loadTransactions);
-let t; $("q").oninput = () => { clearTimeout(t); t = setTimeout(loadTransactions, 200); };
-$("statements").onclick = async (e) => {
-  const id = e.target.dataset?.id;
-  if (id && confirm("Remove this statement and its transactions from the database?")) {
-    await api(`/api/statements/${id}`, { method: "DELETE" }); refresh();
-  }
-};
-$("export").onclick = async () => {
-  const res = await api("/api/export.csv?" + filters());
-  if (window.pywebview?.api) { await window.pywebview.api.save_csv(await res.text()); return; }
-  const blob = await res.blob();
-  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: "transactions.csv" });
-  a.click(); URL.revokeObjectURL(a.href);
-};
-refresh();
-</script>
-</body>
+          <input type="month" title="From month" x-model="f.start" @change="loadTransactions()" />
+          <input type="month" title="To month" x-model="f.end" @change="loadTransactions()" />
+          <input
+            type="search"
+            placeholder="Search description"
+            x-model="f.q"
+            @input.debounce.200ms="loadTransactions()"
+          />
+          <button @click="exportCsv()">Export CSV</button>
+        </div>
+        <div class="totals">
+          <span>In <b x-text="fmt(totals.tin)">0.00</b></span
+          ><span>Out <b x-text="fmt(totals.tout)">0.00</b></span>
+          <span>Net <b x-text="fmt(totals.net)">0.00</b></span
+          ><span><b x-text="rows.length">0</b> rows</span>
+        </div>
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Account</th>
+                <th style="text-align: right">Amount</th>
+                <th style="text-align: right">Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="r in rows">
+                <tr>
+                  <td class="date" x-text="r.txn_date"></td>
+                  <td>
+                    <template x-for="line in String(r.description ?? '').split(' | ')"
+                      ><div x-text="line"></div
+                    ></template>
+                    <div class="acct" x-show="r.reference" x-text="'Ref ' + r.reference"></div>
+                  </td>
+                  <td>
+                    <div x-text="`${r.bank} ${r.account}`"></div>
+                    <div class="acct" x-text="r.account_name"></div>
+                  </td>
+                  <td class="num" :class="{ in: Number(r.amount) > 0 }" x-text="fmt(r.amount)"></td>
+                  <td class="num" x-text="r.balance == null ? '' : fmt(r.balance)"></td>
+                </tr>
+              </template>
+              <tr x-show="!rows.length">
+                <td
+                  colspan="5"
+                  class="empty"
+                  x-text="loaded && statements.length ? 'No transactions match' : 'Import a statement to begin'"
+                >
+                  Import a statement to begin
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </body>
 </html>
