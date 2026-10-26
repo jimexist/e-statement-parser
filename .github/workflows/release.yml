@@ -1,7 +1,7 @@
 name: Release
 
-# Push a tag like v0.2.0 to build eStatement.app and attach it to a GitHub release.
-# "Run workflow" (manual) builds and uploads the zip as an artifact without releasing.
+# Push a tag like v0.2.0 to build eStatement.app (full + lite) and attach both to a GitHub release.
+# "Run workflow" (manual) builds and uploads the zips as an artifact without releasing.
 on:
   push:
     tags: ["v*"]
@@ -33,30 +33,43 @@ jobs:
           uv run ruff check .
           uv run pytest -q
 
+      # Two variants: full (MLX OCR for image-only PDFs like HSBC) and lite (text-layer PDFs only).
       - name: Build eStatement.app
         working-directory: packaging
         env:
           APP_VERSION: ${{ steps.version.outputs.version }}
-        run: uv run pyinstaller estatement.spec --noconfirm --distpath ../dist --workpath ../build
+        run: |
+          uv run pyinstaller estatement.spec --noconfirm --distpath ../dist --workpath ../build
+          ESTATEMENT_OCR=0 uv run pyinstaller estatement.spec --noconfirm --distpath ../dist/lite --workpath ../build/lite
 
-      - name: Smoke test the bundle
-        run: uv run python packaging/smoke_test.py dist/eStatement.app
+      - name: Smoke test the bundles
+        run: |
+          uv run python packaging/smoke_test.py dist/eStatement.app
+          uv run python packaging/smoke_test.py dist/lite/eStatement.app
 
       - name: Zip
         id: zip
         run: |
-          name="eStatement-${{ steps.version.outputs.version }}-macos-arm64.zip"
+          v="${{ steps.version.outputs.version }}"
+          full="eStatement-$v-macos-arm64.zip"
+          lite="eStatement-lite-$v-macos-arm64.zip"
           # ditto keeps symlinks and code signatures intact inside the .app
-          ditto -c -k --sequesterRsrc --keepParent dist/eStatement.app "$name"
-          shasum -a 256 "$name" > "$name.sha256"
-          echo "name=$name" >> "$GITHUB_OUTPUT"
+          ditto -c -k --sequesterRsrc --keepParent dist/eStatement.app "$full"
+          ditto -c -k --sequesterRsrc --keepParent dist/lite/eStatement.app "$lite"
+          shasum -a 256 "$full" > "$full.sha256"
+          shasum -a 256 "$lite" > "$lite.sha256"
+          du -h "$full" "$lite"
+          echo "full=$full" >> "$GITHUB_OUTPUT"
+          echo "lite=$lite" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.zip.outputs.name }}
+          name: eStatement-${{ steps.version.outputs.version }}-macos-arm64
           path: |
-            ${{ steps.zip.outputs.name }}
-            ${{ steps.zip.outputs.name }}.sha256
+            ${{ steps.zip.outputs.full }}
+            ${{ steps.zip.outputs.full }}.sha256
+            ${{ steps.zip.outputs.lite }}
+            ${{ steps.zip.outputs.lite }}.sha256
 
       - name: Publish release
         if: github.ref_type == 'tag'
@@ -66,16 +79,20 @@ jobs:
           cat > notes.md <<'EOF'
           **eStatement for macOS (Apple Silicon).** Parses bank e-statement PDFs into SQLite/CSV, fully on-device.
 
+          **Which zip:** `eStatement-lite` (~180 MB) reads PDFs with a text layer (UOB, DBS).
+          `eStatement` (~550 MB) adds on-device OCR for image-only PDFs (HSBC).
+
           **Install:** unzip, move `eStatement.app` to Applications. The app is not notarized, so on first launch
           right-click it and choose **Open** (or run `xattr -dr com.apple.quarantine /Applications/eStatement.app`).
 
-          **OCR for image-only PDFs (e.g. HSBC):** the app offers a one-time download of the OCR model
-          (about 2 GB from Hugging Face, pinned by SHA-256) the first time a statement needs it.
+          **OCR for image-only PDFs (e.g. HSBC), full build only:** the app offers a one-time download of
+          the OCR model (about 2 GB from Hugging Face, pinned by SHA-256) the first time a statement needs it.
           Parsing itself never uses the network.
 
-          Verify the download with the attached `.sha256` file.
+          Verify the download with the attached `.sha256` files.
           EOF
           gh release create "$GITHUB_REF_NAME" \
-            "${{ steps.zip.outputs.name }}" "${{ steps.zip.outputs.name }}.sha256" \
+            "${{ steps.zip.outputs.full }}" "${{ steps.zip.outputs.full }}.sha256" \
+            "${{ steps.zip.outputs.lite }}" "${{ steps.zip.outputs.lite }}.sha256" \
             --title "eStatement ${{ steps.version.outputs.version }}" \
             --notes-file notes.md --verify-tag

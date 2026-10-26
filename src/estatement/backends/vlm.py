@@ -116,8 +116,25 @@ def is_installed(model_id: str = DEFAULT_MODEL) -> bool:
     return all((path / name).is_file() for name in PINNED.get(model_id, (None, {}))[1])
 
 
+class OcrNotIncluded(RuntimeError):
+    pass
+
+
+def _require_ocr_runtime() -> None:
+    # The lite app build leaves out MLX and mlx-vlm, so there is no model to offer.
+    try:
+        import huggingface_hub  # noqa: F401
+        import mlx_vlm  # noqa: F401
+    except ImportError:
+        raise OcrNotIncluded(
+            "On-device OCR is not included in this build. Image-only PDFs (e.g. HSBC) "
+            "need the full eStatement app or `uv sync --extra vlm`."
+        ) from None
+
+
 def local_model_path(model_id: str = DEFAULT_MODEL) -> Path:
     """Resolve weights from the local cache only; never touches the network."""
+    _require_ocr_runtime()
     from huggingface_hub.errors import LocalEntryNotFoundError
 
     try:
@@ -131,6 +148,7 @@ def local_model_path(model_id: str = DEFAULT_MODEL) -> Path:
 
 
 def download_model(model_id: str = DEFAULT_MODEL) -> Path:
+    _require_ocr_runtime()
     path = _snapshot(model_id, local_files_only=False)
     _verify(model_id, path)
     return path
@@ -150,6 +168,7 @@ def _load(model_id: str):
 def extract_lines(
     pdf: Path, model_id: str = DEFAULT_MODEL, dpi: int = 200, pages: list[int] | None = None
 ) -> list[Line]:
+    _require_ocr_runtime()
     from mlx_vlm import generate
     from mlx_vlm.prompt_utils import apply_chat_template
 
