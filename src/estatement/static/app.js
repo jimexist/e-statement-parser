@@ -76,16 +76,46 @@ document.addEventListener("alpine:init", () =>
       await this.loadTransactions();
     },
 
-    async upload(files) {
-      files = [...files].filter((f) => f.name.toLowerCase().endsWith(".pdf"));
-      if (!files.length) return;
+    async importFiles(files, confirmOcr) {
       const fd = new FormData();
       for (const f of files) fd.append("files", f);
       fd.append("backend", this.backend);
       fd.append("allow_unreconciled", this.allow);
+      fd.append("confirm_ocr", confirmOcr);
+      return (await api("/api/import", { method: "POST", body: fd })).json();
+    },
+
+    async upload(files) {
+      files = [...files].filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+      if (!files.length) return;
       this.results = [{ cls: "", file: null, detail: `Parsing ${files.length} file(s)…` }];
       try {
-        const res = await (await api("/api/import", { method: "POST", body: fd })).json();
+        let res = await this.importFiles(files, false);
+        // Image-only PDFs come back unparsed until the user agrees to the slower OCR pass.
+        const slow = res.filter((r) => r.needs_ocr_confirm);
+        if (slow.length) {
+          const ok = confirm(
+            `No text layer, so these need on-device OCR:\n${slow.map((r) => r.file).join("\n")}\n\n` +
+              "OCR is much slower than reading the text layer: it can take several minutes per statement. Continue?",
+          );
+          const done = res.filter((r) => !r.needs_ocr_confirm);
+          if (ok) {
+            this.results = [
+              {
+                cls: "",
+                file: null,
+                detail: `Running OCR on ${slow.length} file(s)… this can take a few minutes.`,
+              },
+            ];
+            const again = files.filter((f) => slow.some((r) => r.file === f.name));
+            res = [...done, ...(await this.importFiles(again, true))];
+          } else {
+            res = [
+              ...done,
+              ...slow.map((r) => ({ ...r, status: "error", error: "Skipped: OCR not confirmed." })),
+            ];
+          }
+        }
         if (res.some((r) => r.needs_ocr_model)) {
           this.ocrPrompt = true;
           await this.checkOcr();
