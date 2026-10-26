@@ -51,7 +51,7 @@ def demo_statements() -> list[Statement]:
         Transaction(date(2026, 9, 8), "PAYMT THRU E-BANK", Decimal("200.00"), date(2026, 9, 8)),
         Transaction(date(2026, 9, 2), "BUS/MRT 000000001 SINGAPORE", Decimal("-1.50"), date(2026, 9, 7), "00000000000000000000001"),
         Transaction(date(2026, 9, 4), "COFFEE SHOP SINGAPORE", Decimal("-6.40"), date(2026, 9, 8), "00000000000000000000002"),
-        Transaction(date(2026, 9, 12), "SUPERMARKET PARKWAY", Decimal("-82.35"), date(2026, 9, 14), "00000000000000000000003"),
+        Transaction(date(2026, 9, 12), "SUPERMARKET DEMO", Decimal("-82.35"), date(2026, 9, 14), "00000000000000000000003"),
         Transaction(date(2026, 9, 20), "BOOKSTORE SINGAPORE", Decimal("-50.15"), date(2026, 9, 22), "00000000000000000000004"),
     ]
     savings = Account(bank="DBS", kind="deposit", name="Savings Account", number_masked="****0001",

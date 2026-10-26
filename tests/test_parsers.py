@@ -55,13 +55,13 @@ def test_markdown_tables_flatten_to_rows():
 |---|---|---|---|
 | 07 SEP | 02 SEP | BUS/MRT 1 SINGAPORE Ref No. : 00000000000000000000001 | 1.50 |
 
-## 1111-2222-3333-4444LIU TEST (continued)
+## 1111-2222-3333-4444TAN TEST (continued)
 <table><tr><td>08 SEP</td><td>04 SEP</td><td>SHOP</td><td>2.00 CR</td></tr></table>
 """
     texts = [l.text for l in to_lines(md, page=1)]
     assert "07 SEP 02 SEP BUS/MRT 1 SINGAPORE Ref No. : 00000000000000000000001 1.50" in texts
     assert "08 SEP 04 SEP SHOP 2.00 CR" in texts
-    assert "1111-2222-3333-4444LIU TEST (continued)" in texts
+    assert "1111-2222-3333-4444TAN TEST (continued)" in texts
 
 
 def test_unknown_bank_is_rejected():

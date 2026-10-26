@@ -28,7 +28,7 @@ def test_amounts_round_trip_exactly(tmp_path):
     for i, s in enumerate(demo_statements()):
         store.save(s, f"sha{i}")
     rows = {r["description"]: r for r in store.transactions()}
-    assert rows["SUPERMARKET PARKWAY"]["amount"] == "-82.35"
+    assert rows["SUPERMARKET DEMO"]["amount"] == "-82.35"
     assert rows["Advice FAST Payment / Receipt | SALARY PAYMENT"]["balance"] == "6000.00"
     out = list(csv.DictReader(io.StringIO(store.to_csv(account="DBS:deposit:****0001"))))
     assert [r["amount"] for r in out] == ["5000.00", "-2300.00"]
