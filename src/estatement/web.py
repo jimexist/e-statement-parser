@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import secrets
 import tempfile
+import threading
 from importlib import resources
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -17,6 +19,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Upload
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from pydantic import BaseModel
 
+from .backends import vlm
 from .pipeline import parse_pdf
 from .store import DEFAULT_DB, AccountRow, StatementRow, Store, TransactionRow, sha256
 
@@ -36,10 +39,62 @@ class ImportResult(BaseModel):
     inserted: int | None = None
     failed_checks: list[str] = []
     warnings: list[str] = []
+    needs_ocr_model: bool = False
 
 
 class Deleted(BaseModel):
     ok: bool = True
+
+
+class OcrModel(BaseModel):
+    available: bool  # the OCR runtime is part of this install
+    installed: bool
+    downloading: bool
+    done_bytes: int
+    total_bytes: int
+    error: str | None = None
+
+
+class OcrDownload:
+    """Fetches the pinned OCR model in the background when the user asks for it.
+
+    This is the only network access the app makes, and only on that click."""
+
+    def __init__(self) -> None:
+        self.thread: threading.Thread | None = None
+        self.error: str | None = None
+
+    def _run(self) -> None:
+        try:
+            vlm.download_model()
+        except Exception as e:  # noqa: BLE001 - shown in the UI
+            self.error = f"{type(e).__name__}: {e}"
+
+    def start(self) -> None:
+        if self.thread and self.thread.is_alive():
+            return
+        self.error = None
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def status(self) -> OcrModel:
+        if find_spec("mlx_vlm") is None:
+            return OcrModel(available=False, installed=False, downloading=False, done_bytes=0, total_bytes=0)
+        from huggingface_hub import constants
+
+        total = vlm.model_size()
+        downloading = bool(self.thread and self.thread.is_alive())
+        installed = not downloading and vlm.is_installed()
+        blobs = Path(constants.HF_HUB_CACHE) / f"models--{vlm.DEFAULT_MODEL.replace('/', '--')}" / "blobs"
+        done = sum(f.stat().st_size for f in blobs.iterdir()) if downloading and blobs.is_dir() else 0
+        return OcrModel(
+            available=True,
+            installed=installed,
+            downloading=downloading,
+            done_bytes=total if installed else min(done, total),
+            total_bytes=total,
+            error=self.error,
+        )
 
 
 def create_app(db_path: Path = DEFAULT_DB, token: str | None = None) -> FastAPI:
@@ -47,6 +102,7 @@ def create_app(db_path: Path = DEFAULT_DB, token: str | None = None) -> FastAPI:
     store = Store(db_path)
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.state.token = token
+    ocr = OcrDownload()
 
     @app.middleware("http")
     async def host_guard(request: Request, call_next):
@@ -92,6 +148,16 @@ def create_app(db_path: Path = DEFAULT_DB, token: str | None = None) -> FastAPI:
                 tmp.flush()
                 try:
                     stmt = parse_pdf(Path(tmp.name), backend=backend)
+                except vlm.ModelNotInstalled:
+                    results.append(
+                        ImportResult(
+                            file=f.filename,
+                            status="error",
+                            error="This PDF has no text layer and needs the on-device OCR model.",
+                            needs_ocr_model=True,
+                        )
+                    )
+                    continue
                 except Exception as e:  # noqa: BLE001 - reported to the user per file
                     results.append(
                         ImportResult(file=f.filename, status="error", error=f"{type(e).__name__}: {e}")
@@ -113,6 +179,16 @@ def create_app(db_path: Path = DEFAULT_DB, token: str | None = None) -> FastAPI:
                 item.status = "imported"
             results.append(item)
         return results
+
+    @app.get("/api/ocr-model", dependencies=[Depends(auth)], response_model=OcrModel)
+    def ocr_model() -> OcrModel:
+        return ocr.status()
+
+    @app.post("/api/ocr-model/download", dependencies=[Depends(auth)], response_model=OcrModel)
+    def download_ocr_model() -> OcrModel:
+        if not ocr.status().installed:
+            ocr.start()
+        return ocr.status()
 
     @app.get("/api/statements", dependencies=[Depends(auth)], response_model=list[StatementRow])
     def statements() -> list[StatementRow]:
