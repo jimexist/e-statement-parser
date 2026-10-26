@@ -74,8 +74,17 @@ to build the lite app (~180 MB) without OCR; it reads text-layer PDFs only
 bundled; the app offers to download them the first time an image-only PDF
 needs them (or when you pick the OCR engine). From a terminal:
 `dist/eStatement.app/Contents/MacOS/eStatement download-model`. The app is
-ad-hoc signed. For other Macs, sign it with a Developer ID and notarize it, or
-right-click > Open the first time.
+ad-hoc signed and not notarized, so a downloaded copy (e.g. from a release)
+shows "eStatement Not Opened" on first launch. Click **Done**, then click
+**Open Anyway** in System Settings > Privacy & Security, or clear the quarantine
+flag:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/eStatement.app
+```
+
+Right-click > Open no longer skips this check on macOS 15 and later. Signing
+with a Developer ID and notarizing removes the prompt.
 
 The local server binds to `127.0.0.1` on a random port, rejects non-localhost
 `Host` headers (DNS rebinding), and requires a per-launch token on every API
