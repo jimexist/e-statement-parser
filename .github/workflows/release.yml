@@ -70,8 +70,13 @@ jobs:
           cat > notes.md <<'EOF'
           **eStatement for macOS (Apple Silicon).** Parses bank e-statement PDFs into SQLite/CSV, fully on-device.
 
-          **Install:** unzip, move `eStatement.app` to Applications. The app is not notarized, so on first launch
-          right-click it and choose **Open** (or run `xattr -dr com.apple.quarantine /Applications/eStatement.app`).
+          **Install:** unzip, move `eStatement.app` to Applications. The app is not notarized, so macOS shows
+          "eStatement Not Opened" on first launch. Click **Done** (not Move to Trash), then either:
+          - open System Settings > Privacy & Security, click **Open Anyway** next to "eStatement was blocked",
+            and confirm, or
+          - run `xattr -dr com.apple.quarantine /Applications/eStatement.app` in Terminal.
+
+          Right-click > Open no longer skips this check on macOS 15 and later.
 
           **OCR for image-only PDFs (e.g. HSBC):** the app offers a one-time download of
           the OCR model (about 2 GB from Hugging Face, pinned by SHA-256) the first time a statement needs it.
