@@ -409,6 +409,7 @@
             @input.debounce.200ms="loadTransactions()"
           />
           <button @click="exportCsv()">Export CSV</button>
+          <button @click="copyCsv()" x-text="copied || 'Copy CSV'">Copy CSV</button>
         </div>
         <div class="totals">
           <span>In <b x-text="fmt(totals.tin)">0.00</b></span

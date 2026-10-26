@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from pydantic import BaseModel
 
 from .backends import vlm
-from .pipeline import parse_pdf
+from .pipeline import parse_pdf, resolve_backend
 from .store import DEFAULT_DB, AccountRow, StatementRow, Store, TransactionRow, sha256
 
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
@@ -29,7 +29,7 @@ SCRIPTS = {"app": "app.js", "alpine.min": "alpine-3.14.9.min.js"}
 
 class ImportResult(BaseModel):
     file: str | None
-    status: Literal["imported", "duplicate", "rejected", "error"]
+    status: Literal["imported", "duplicate", "rejected", "error", "needs_confirm"]
     error: str | None = None
     bank: str | None = None
     statement_date: str | None = None
@@ -40,6 +40,7 @@ class ImportResult(BaseModel):
     failed_checks: list[str] = []
     warnings: list[str] = []
     needs_ocr_model: bool = False
+    needs_ocr_confirm: bool = False  # OCR is slow, so the user agrees to it first
 
 
 class Deleted(BaseModel):
@@ -122,10 +123,16 @@ class ImportJob:
     def running(self) -> bool:
         return bool(self.thread and self.thread.is_alive())
 
-    def start(self, uploads: list[tuple[str | None, bytes]], backend: str, allow_unreconciled: bool) -> None:
+    def start(
+        self,
+        uploads: list[tuple[str | None, bytes]],
+        backend: str,
+        allow_unreconciled: bool,
+        confirm_ocr: bool,
+    ) -> None:
         self.state = ImportStatus(running=True, file_count=len(uploads))
         self.thread = threading.Thread(
-            target=self._run, args=(uploads, backend, allow_unreconciled), daemon=True
+            target=self._run, args=(uploads, backend, allow_unreconciled, confirm_ocr), daemon=True
         )
         self.thread.start()
 
@@ -137,7 +144,13 @@ class ImportJob:
             fields.update(page=None, page_count=None)
         self.state = self.state.model_copy(update=fields)
 
-    def _run(self, uploads: list[tuple[str | None, bytes]], backend: str, allow_unreconciled: bool) -> None:
+    def _run(
+        self,
+        uploads: list[tuple[str | None, bytes]],
+        backend: str,
+        allow_unreconciled: bool,
+        confirm_ocr: bool,
+    ) -> None:
         results = []
         for i in range(len(uploads)):
             # Drop each PDF's bytes as soon as we take it so none outlive the import.
@@ -147,14 +160,14 @@ class ImportJob:
                 running=True, file_count=len(uploads), file_index=i + 1, file=name, results=list(results)
             )
             try:
-                item = self._import_one(name, data, backend, allow_unreconciled)
+                item = self._import_one(name, data, backend, allow_unreconciled, confirm_ocr)
             except Exception as e:  # noqa: BLE001 - reported to the user per file
                 item = ImportResult(file=name, status="error", error=f"{type(e).__name__}: {e}")
             results.append(item)
             self.state = self.state.model_copy(update={"results": list(results)})
 
     def _import_one(
-        self, name: str | None, data: bytes, backend: str, allow_unreconciled: bool
+        self, name: str | None, data: bytes, backend: str, allow_unreconciled: bool, confirm_ocr: bool
     ) -> ImportResult:
         digest = sha256(data)
         if self.store.has(digest):
@@ -164,7 +177,10 @@ class ImportJob:
             tmp.write(data)
             tmp.flush()
             try:
-                stmt = parse_pdf(Path(tmp.name), backend=backend, progress=self._progress)
+                resolved = resolve_backend(Path(tmp.name), backend)
+                if resolved == "vlm" and not confirm_ocr and vlm.is_installed():
+                    return ImportResult(file=name, status="needs_confirm", needs_ocr_confirm=True)
+                stmt = parse_pdf(Path(tmp.name), backend=resolved, progress=self._progress)
             except vlm.ModelNotInstalled:
                 return ImportResult(
                     file=name,
@@ -227,11 +243,12 @@ def create_app(db_path: Path = DEFAULT_DB, token: str | None = None) -> FastAPI:
         files: Annotated[list[UploadFile], File()],
         backend: Annotated[str, Form()] = "auto",
         allow_unreconciled: Annotated[bool, Form()] = False,
+        confirm_ocr: Annotated[bool, Form()] = False,
     ) -> ImportStatus:
         uploads = [(f.filename, await f.read()) for f in files]
         if job.running:  # checked after the awaits so two uploads can't both start
             raise HTTPException(409, "an import is already running")
-        job.start(uploads, backend, allow_unreconciled)
+        job.start(uploads, backend, allow_unreconciled, confirm_ocr)
         return job.status()
 
     # Plain def (runs in the threadpool) so polling works while a parse is running.

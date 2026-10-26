@@ -21,6 +21,7 @@ document.addEventListener("alpine:init", () =>
     ocr: null,
     ocrPrompt: false,
     job: null,
+    copied: false,
 
     init() {
       this.refresh();
@@ -98,59 +99,91 @@ document.addEventListener("alpine:init", () =>
       await this.loadTransactions();
     },
 
-    async upload(files) {
-      files = [...files].filter((f) => f.name.toLowerCase().endsWith(".pdf"));
-      if (!files.length) return;
+    // Starts a background import and waits for it, so the progress bar can follow it.
+    async importFiles(files, confirmOcr) {
       const fd = new FormData();
       for (const f of files) fd.append("files", f);
       fd.append("backend", this.backend);
       fd.append("allow_unreconciled", this.allow);
+      fd.append("confirm_ocr", confirmOcr);
+      this.job = await (await api("/api/import", { method: "POST", body: fd })).json();
+      return this.waitForImport();
+    },
+    async waitForImport() {
+      while (this.job.running) {
+        await new Promise((r) => setTimeout(r, 500));
+        this.job = await (await api("/api/import")).json();
+      }
+      const res = this.job.results;
+      this.job = null;
+      return res;
+    },
+
+    async upload(files) {
+      files = [...files].filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+      if (!files.length) return;
       this.results = [];
       try {
-        this.job = await (await api("/api/import", { method: "POST", body: fd })).json();
+        let res = await this.importFiles(files, false);
+        // Image-only PDFs come back unparsed until the user agrees to the slower OCR pass.
+        const slow = res.filter((r) => r.needs_ocr_confirm);
+        if (slow.length) {
+          const ok = confirm(
+            `No text layer, so these need on-device OCR:\n${slow.map((r) => r.file).join("\n")}\n\n` +
+              "OCR is much slower than reading the text layer: it can take several minutes per statement. Continue?",
+          );
+          const done = res.filter((r) => !r.needs_ocr_confirm);
+          if (ok) {
+            const again = files.filter((f) => slow.some((r) => r.file === f.name));
+            res = [...done, ...(await this.importFiles(again, true))];
+          } else {
+            res = [
+              ...done,
+              ...slow.map((r) => ({ ...r, status: "error", error: "Skipped: OCR not confirmed." })),
+            ];
+          }
+        }
+        await this.showResults(res);
       } catch (e) {
         this.results = [{ cls: "bad", file: null, detail: `Import failed: ${e.message}` }];
-        return;
       }
-      await this.pollImport();
+      this.job = null;
+      this.refresh();
     },
     // After a reload, keep showing an import that is still running.
     async resumeImport() {
       const job = await (await api("/api/import")).json();
       if (!job.running) return;
       this.job = job;
-      await this.pollImport();
-    },
-    async pollImport() {
       try {
-        while (this.job.running) {
-          await new Promise((r) => setTimeout(r, 500));
-          this.job = await (await api("/api/import")).json();
-        }
-        const res = this.job.results;
-        if (res.some((r) => r.needs_ocr_model)) {
-          this.ocrPrompt = true;
-          await this.checkOcr();
-        }
-        this.results = res.map((r) => ({
-          file: r.file,
-          cls: r.status === "imported" ? "ok" : r.status === "duplicate" ? "dup" : "bad",
-          detail:
-            r.status === "imported"
-              ? `${r.bank} ${r.statement_date}: ${r.inserted} rows${r.reconciled ? "" : " (totals differ)"}`
-              : r.status === "duplicate"
-                ? "already imported"
-                : r.status === "rejected"
-                  ? `${r.bank} ${r.statement_date}: totals don't match (${r.failed_checks.join(", ")}), not saved`
-                  : r.needs_ocr_model
-                    ? `${r.error} Download it above, then drop the file again.`
-                    : r.error,
-        }));
+        await this.showResults(await this.waitForImport());
       } catch (e) {
         this.results = [{ cls: "bad", file: null, detail: `Import failed: ${e.message}` }];
       }
       this.job = null;
       this.refresh();
+    },
+    async showResults(res) {
+      if (res.some((r) => r.needs_ocr_model)) {
+        this.ocrPrompt = true;
+        await this.checkOcr();
+      }
+      this.results = res.map((r) => ({
+        file: r.file,
+        cls: r.status === "imported" ? "ok" : r.status === "duplicate" ? "dup" : "bad",
+        detail:
+          r.status === "imported"
+            ? `${r.bank} ${r.statement_date}: ${r.inserted} rows${r.reconciled ? "" : " (totals differ)"}`
+            : r.status === "duplicate"
+              ? "already imported"
+              : r.status === "rejected"
+                ? `${r.bank} ${r.statement_date}: totals don't match (${r.failed_checks.join(", ")}), not saved`
+                : r.needs_ocr_model
+                  ? `${r.error} Download it above, then drop the file again.`
+                  : r.needs_ocr_confirm
+                    ? "Needs on-device OCR. Drop the file again to run it."
+                    : r.error,
+      }));
     },
 
     async remove(id) {
@@ -172,6 +205,25 @@ document.addEventListener("alpine:init", () =>
       });
       a.click();
       URL.revokeObjectURL(a.href);
+    },
+
+    async copyCsv() {
+      const csv = api("/api/export.csv?" + this.params()).then((r) => r.text());
+      try {
+        if (window.pywebview?.api) {
+          await window.pywebview.api.copy_csv(await csv);
+        } else if (window.ClipboardItem) {
+          // Hand over a promise so Safari still counts this as part of the click.
+          const blob = csv.then((t) => new Blob([t], { type: "text/plain" }));
+          await navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
+        } else {
+          await navigator.clipboard.writeText(await csv);
+        }
+        this.copied = "Copied";
+      } catch {
+        this.copied = "Copy failed";
+      }
+      setTimeout(() => (this.copied = false), 1500);
     },
   })),
 );

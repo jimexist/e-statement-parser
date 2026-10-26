@@ -94,9 +94,10 @@ def test_web_import_reports_progress_and_imports(tmp_path, monkeypatch):
 
     app = create_app(tmp_path / "w.sqlite", token="t")
     c = TestClient(app, base_url="http://127.0.0.1")
+    monkeypatch.setattr("estatement.web.resolve_backend", lambda pdf, backend: "vlm")
     monkeypatch.setattr("estatement.web.parse_pdf", fake_parse)
     files = [("files", (n, n.encode(), "application/pdf")) for n in ("a.pdf", "b.pdf")]
-    r = c.post("/api/import", headers={"X-Token": "t"}, files=files, data={"backend": "auto"})
+    r = c.post("/api/import", headers={"X-Token": "t"}, files=files, data={"confirm_ocr": "true"})
     assert r.status_code == 200
     status = _wait_for_import(c)
     assert [(s.file_index, s.attempt, s.page, s.page_count) for s in seen[:4]] == [

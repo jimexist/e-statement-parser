@@ -122,14 +122,14 @@ class OcrNotIncluded(RuntimeError):
 
 
 def _require_ocr_runtime() -> None:
-    # The lite app build leaves out MLX and mlx-vlm, so there is no model to offer.
+    # Installs without the `vlm` extra leave out MLX and mlx-vlm, so there is no model to offer.
     try:
         import huggingface_hub  # noqa: F401
         import mlx_vlm  # noqa: F401
     except ImportError:
         raise OcrNotIncluded(
             "On-device OCR is not included in this build. Image-only PDFs (e.g. HSBC) "
-            "need the full eStatement app or `uv sync --extra vlm`."
+            "need the eStatement app or `uv sync --extra vlm`."
         ) from None
 
 

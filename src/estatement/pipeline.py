@@ -29,16 +29,22 @@ def extract_lines(pdf: Path, backend: str = "textlayer", **kw):
     return mod.extract_lines(pdf, **kw)
 
 
+def resolve_backend(pdf: Path, backend: str = "auto") -> str:
+    """``auto`` uses the text layer when the PDF has one and falls back to the
+    on-device VLM for scanned / image-only PDFs."""
+    if backend != "auto":
+        return backend
+    from .backends.textlayer import has_text_layer
+
+    return "textlayer" if has_text_layer(Path(pdf)) else "vlm"
+
+
 def parse_pdf(pdf: Path, backend: str = "auto", progress: Progress | None = None, **kw) -> Statement:
-    """Parse a statement. ``auto`` uses the text layer when the PDF has one and
-    falls back to the on-device VLM for scanned / image-only PDFs.
+    """Parse a statement with ``backend`` (see ``resolve_backend``).
 
     ``progress`` is told the chosen backend and, for OCR, the attempt and page."""
     pdf = Path(pdf)
-    if backend == "auto":
-        from .backends.textlayer import has_text_layer
-
-        backend = "textlayer" if has_text_layer(pdf) else "vlm"
+    backend = resolve_backend(pdf, backend)
     if progress:
         progress(backend=backend)
     if backend == "vlm":
