@@ -1,11 +1,6 @@
 # PyInstaller spec: builds dist/eStatement.app
-#   cd packaging && uv run pyinstaller estatement.spec --noconfirm --distpath ../dist --workpath ../build
-# APP_VERSION (e.g. from a git tag) sets the bundle version.
-import os
-
+# uv run pyinstaller packaging/estatement.spec --noconfirm
 from PyInstaller.utils.hooks import collect_all, collect_data_files
-
-VERSION = os.environ.get("APP_VERSION", "0.0.0-dev")
 
 datas = collect_data_files("estatement")
 binaries, hiddenimports = [], ["estatement.backends.textlayer", "estatement.backends.vlm"]
@@ -33,8 +28,7 @@ app = BUNDLE(
     name="eStatement.app",
     bundle_identifier="local.estatement",
     info_plist={
-        "CFBundleShortVersionString": VERSION,
-        "CFBundleVersion": VERSION,
+        "CFBundleShortVersionString": "0.1.0",
         "NSHighResolutionCapable": True,
         "LSMinimumSystemVersion": "14.0",
     },
