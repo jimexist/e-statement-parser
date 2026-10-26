@@ -5,15 +5,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-26
+
 ### Added
 
-- Importing shows a progress bar: which file is being parsed and, for scanned statements, which OCR page and retry. Parsing now runs in the background and the UI polls for status, so the window stays responsive during long OCR imports.
-- Before running on-device OCR on an image-only PDF, the app asks you to confirm, since OCR can take several minutes per statement.
+- Importing shows a progress bar: which file is being parsed and, for scanned statements, which OCR page and retry. Parsing now runs in the background and the UI polls for status, so the window stays responsive during long OCR imports. ([#16](https://github.com/jimexist/e-statement-parser/pull/16))
+- Before running on-device OCR on an image-only PDF, the app asks you to confirm, since OCR can take several minutes per statement. ([#15](https://github.com/jimexist/e-statement-parser/pull/15))
 - A Copy CSV button next to Export CSV puts the same filtered transactions on the clipboard, ready to paste into a spreadsheet. ([#14](https://github.com/jimexist/e-statement-parser/pull/14))
 
 ### Removed
 
-- The lite macOS app (`eStatement-lite`). Releases ship one app, with on-device OCR.
+- The lite macOS app (`eStatement-lite`). Releases ship one app, with on-device OCR. ([#15](https://github.com/jimexist/e-statement-parser/pull/15))
 
 ## [0.1.1] - 2026-10-26
 
@@ -44,6 +46,7 @@ First release.
 - Now targets Python 3.14. ([#2](https://github.com/jimexist/e-statement-parser/pull/2))
 - Rebuilt the web UI on vendored Alpine.js 3.14.9, so it makes no CDN or other network requests, and lints it with oxlint/oxfmt. ([#4](https://github.com/jimexist/e-statement-parser/pull/4))
 
-[Unreleased]: https://github.com/jimexist/e-statement-parser/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/jimexist/e-statement-parser/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/jimexist/e-statement-parser/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/jimexist/e-statement-parser/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/jimexist/e-statement-parser/releases/tag/v0.1.0

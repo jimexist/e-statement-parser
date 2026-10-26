@@ -1,6 +1,6 @@
 [project]
 name = "estatement"
-version = "0.1.1"
+version = "0.2.0"
 description = "Parse bank e-statements into SQLite/CSV, fully on-device"
 readme = "README.md"
 authors = [
