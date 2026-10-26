@@ -1,0 +1,47 @@
+[project]
+name = "estatement"
+version = "0.1.0"
+description = "Parse bank e-statements into SQLite/CSV, fully on-device"
+readme = "README.md"
+authors = [
+    { name = "Jiayu Liu", email = "jimexist@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.162.0",
+    "pymupdf>=2.0",
+    "python-multipart>=0.0.32",
+    "uvicorn>=0.54.0",
+]
+
+[project.optional-dependencies]
+docling = [
+    "docling>=2.142.1",
+]
+vlm = [
+    "mlx-vlm>=0.7.10",
+]
+applevision = [
+    "ocrmac>=1.0.1",
+]
+app = [
+    "pywebview>=6.2.1",
+]
+
+[project.scripts]
+estatement = "estatement.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pyinstaller>=6.22.3",
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["tests"]
+testpaths = ["tests"]
