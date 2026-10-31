@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-31
+
+### Fixed
+
+- UOB statements with FX+ foreign-currency wallets now parse: each wallet (USD, etc.) is its own account with its own currency and balance, instead of being merged into the One Account and failing reconciliation. Unused wallets with a zero balance are skipped.
+
 ## [0.2.0] - 2026-10-26
 
 ### Added
@@ -46,7 +52,8 @@ First release.
 - Now targets Python 3.14. ([#2](https://github.com/jimexist/e-statement-parser/pull/2))
 - Rebuilt the web UI on vendored Alpine.js 3.14.9, so it makes no CDN or other network requests, and lints it with oxlint/oxfmt. ([#4](https://github.com/jimexist/e-statement-parser/pull/4))
 
-[Unreleased]: https://github.com/jimexist/e-statement-parser/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/jimexist/e-statement-parser/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/jimexist/e-statement-parser/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jimexist/e-statement-parser/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/jimexist/e-statement-parser/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/jimexist/e-statement-parser/releases/tag/v0.1.0

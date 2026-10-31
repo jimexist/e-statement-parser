@@ -126,3 +126,40 @@ def test_textlayer_end_to_end_on_generated_pdf(tmp_path):
 def test_missing_statement_date_is_a_clear_error():
     with pytest.raises(ParseError, match="statement date"):
         uob_cc.parse(lines("Credit Card(s) Statement\nuobgroup.com"))
+
+
+UOB_FX_LINES = """\
+Statement of Account
+Period: 01 Sep 2026 to 30 Sep 2026
+One Account 000-000-000-1
+Date Description Withdrawals Deposits Balance
+SGD SGD SGD
+01 Sep BALANCE B/F 100.00
+09 Sep Currency Conversion 1,264.40 1,364.40
+USD 1000.00
+Total 0.00 1,264.40 1,364.40
+FX+ 000-000-000-2
+Date Description Withdrawals Deposits Balance
+AUD AUD AUD
+01 Sep BALANCE B/F 0.00
+Total 0.00
+FX+ 000-000-000-3
+Date Description Withdrawals Deposits Balance
+USD USD USD
+01 Sep BALANCE B/F 1,000.50
+09 Sep Currency Conversion 1,000.00 0.50
+USD/SGD@1.2644
+Total 1,000.00 0.00 0.50
+End of Transaction Details
+www.uobgroup.com
+"""
+
+
+def test_uob_fx_wallets_are_separate_accounts():
+    stmt = parse_lines(lines(UOB_FX_LINES))
+    assert stmt.ok, [(c.name, c.expected, c.actual) for c in stmt.checks]
+    # The unused AUD wallet is dropped; SGD and USD keep their own balances.
+    sgd, usd = stmt.accounts
+    assert (sgd.number_masked, sgd.currency, sgd.closing_balance) == ("****0001", "SGD", Decimal("1364.40"))
+    assert (usd.number_masked, usd.currency, usd.closing_balance) == ("****0003", "USD", Decimal("0.50"))
+    assert [t.amount for t in usd.transactions] == [Decimal("-1000.00")]

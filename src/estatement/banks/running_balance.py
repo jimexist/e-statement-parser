@@ -129,7 +129,7 @@ def parse_accounts(lines: list[Line], layout: Layout, stmt: Statement) -> list[A
             continue
         if layout.total and (m := layout.total.match(t)):
             flush()
-            withdrawn, deposited, closing = (money(g) for g in m.groups())
+            withdrawn, deposited, closing = (Decimal(0) if g is None else money(g) for g in m.groups())
             acct.closing_balance = closing
             w, d = sums[acct.number_masked]
             stmt.checks += [
@@ -153,8 +153,11 @@ def parse_accounts(lines: list[Line], layout: Layout, stmt: Statement) -> list[A
     stmt.checks.append(
         Check("running balance errors", Decimal(0), Decimal(errors), against_printed_total=False)
     )
-    for a in accounts.values():
+    for masked, a in list(accounts.items()):
         if a.kind != "deposit":
+            continue
+        if not a.transactions and not a.opening_balance and not a.closing_balance:
+            del accounts[masked]  # e.g. an unused foreign-currency wallet
             continue
         if layout.total and a.closing_balance is None:
             # Never report "reconciled" without having compared against a printed total.
